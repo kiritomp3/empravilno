@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=72", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tg-ai-bot"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "aiogram>=3.13,<4.0",
+  "pydantic>=2.9,<3.0",
+  "pydantic-settings>=2.5,<3.0",
+  "openai>=1.51.0",              # новый официальный SDK
+  "redis>=5.0.7",
+  "tenacity>=9.0.0",
+  "structlog>=24.4.0",
+  "pandas>=2.2.2,<3.0",
+  "openpyxl>=3.1.5,<4.0",       # для .xlsx
+  "matplotlib>=3.9.0,<4.0",
+  "uvloop>=0.20.0; platform_system != 'Windows'",
+  "python-multipart>=0.0.9"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "mypy>=1.11", "ruff>=0.6"]
+
+[tool.ruff]
+line-length = 100

@@ -1,0 +1,15 @@
+aiogram<4.0,>=3.13
+pydantic<3.0,>=2.9
+pydantic-settings<3.0,>=2.5
+openai>=1.51.0
+redis>=5.0.7
+tenacity>=9.0.0
+structlog>=24.4.0
+
+[:platform_system != "Windows"]
+uvloop>=0.20.0
+
+[dev]
+pytest>=8.3
+mypy>=1.11
+ruff>=0.6
