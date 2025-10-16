@@ -1,12 +1,38 @@
 services:
   bot:
     build: .
+    container_name: emgood-bot
+    restart: unless-stopped
     env_file: .env
+    environment:
+      # Переопределяем, чтобы внутри контейнера обращаться к сервису redis по имени
+      REDIS_URL: redis://redis:6379/0
+      PORT: "8000"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     ports:
-      - "8000:8000"
+      - "8000:8000"   # FastAPI webhooks/health/ui, если нужно снаружи
+    # Если нужен доступ к локальным файлам/логам — можно примонтировать:
+    # volumes:
+    #   - ./logs:/app/logs
+
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
-    ports: ["6379:6379"]
+    container_name: emgood-redis
+    command: ["redis-server", "--appendonly", "yes"]  # AOF — для стойкости
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis-data:/data   # <-- постоянное хранилище вне контейнера
+    # Порт наружу обычно не нужен, но можно открыть при необходимости:
+    # ports:
+    #   - "6379:6379"
+
+volumes:
+  redis-data:
+    driver: local
