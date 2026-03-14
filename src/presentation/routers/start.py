@@ -17,7 +17,7 @@ def setup_start_router(processor, telemetry=None, settings=None):
             if len(parts) == 2:
                 payload = parts[1].strip()
 
-        # создадим/обновим профиль и начислим +7 (если новый)
+        # создадим/обновим профиль и начислим +2 (если новый)
         welcome = await processor.ensure_profile(
             chat_id=msg.chat.id,
             name=msg.from_user.full_name if msg.from_user else None,

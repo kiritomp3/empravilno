@@ -11,7 +11,7 @@ RESPONSE_KEYS = ("items",)
 
 WELCOME_TEXT = (
     "Привет! Я бот, который поможет посчитать БЖУ. "
-    "Вам начислено +7 дней подписки за регистрацию.\n\n"
+    "Вам начислено +2 дня подписки за регистрацию.\n\n"
     "Нажмите кнопку, чтобы начать, или задайте вопрос."
 )
 
@@ -26,7 +26,7 @@ class MessageProcessor:
     async def ensure_profile(self, *, chat_id: int, name: str | None, username: str | None) -> str:
         profile, is_new = await self._profiles.ensure(chat_id=chat_id, name=name, username=username)
         if is_new:
-            await self._profiles.extend_subscription(chat_id, 7) # +7 за первую регистрацию
+            await self._profiles.extend_subscription(chat_id, 2) # +2 за первую регистрацию
             return WELCOME_TEXT
         return "С возвращением! Готов продолжить."
 
