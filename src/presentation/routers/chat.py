@@ -6,7 +6,7 @@ from presentation.keyboards.common import day_keyboard
 
 router = Router(name="chat")
 
-def setup(processor: MessageProcessor) -> Router:
+def setup(processor: MessageProcessor, telemetry=None) -> Router:
 
     @router.callback_query(F.data == "clear_day")
     async def on_clear_day(cb: CallbackQuery):
@@ -40,6 +40,8 @@ def setup(processor: MessageProcessor) -> Router:
 
     @router.message(F.text)
     async def on_text(msg: types.Message):
+        if telemetry:
+            await telemetry.incr("telegram.user_messages_total")
         reply = await processor.process_user_text(msg.chat.id, msg.text or "")
 
         show_undo = True

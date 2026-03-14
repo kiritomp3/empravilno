@@ -5,9 +5,11 @@ from presentation.keyboards.reply import start_kb
 
 router = Router(name="start")
 
-def setup_start_router(processor):
+def setup_start_router(processor, telemetry=None, settings=None):
     @router.message(CommandStart())
     async def on_start(msg: types.Message):
+        if telemetry:
+            await telemetry.incr("telegram.start_total")
         # извлечём deep-link payload (если есть)
         payload = None
         if msg.text:
@@ -70,6 +72,28 @@ def setup_start_router(processor):
         me = await bot.get_me()
         link = await processor.build_ref_link(me.username, msg.chat.id)
         await msg.answer(f"Ваша реферальная ссылка:\n{link}")
+
+    @router.message(Command("stats"))
+    async def on_stats(msg: types.Message):
+        if not telemetry or not settings or msg.chat.id not in settings.admin_chat_ids:
+            await msg.answer("Команда недоступна.")
+            return
+
+        stats = await telemetry.collect_all_stats()
+        business = stats["business"]
+        counters = stats["counters"]
+        text = (
+            "Продакшн-статистика\n\n"
+            f"Пользователей: {business['users_total']}\n"
+            f"Активных подписок: {business['subscriptions_active']}\n"
+            f"Рефералов: {business['referrals_total']}\n"
+            f"Дневников: {business['nutrition_logs_total']}\n"
+            f"Успешных оплат: {int(counters.get('payments.success_total', 0))}\n"
+            f"Неуспешных оплат: {int(counters.get('payments.failed_total', 0))}\n"
+            f"Webhook дублей: {int(counters.get('payments.duplicate_total', 0))}\n"
+            f"Сообщений пользователей: {int(counters.get('telegram.user_messages_total', 0))}"
+        )
+        await msg.answer(text)
     
 
     return router

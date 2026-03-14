@@ -10,7 +10,7 @@ from presentation.keyboards.reply import start_kb, main_menu_kb
 class GoalEdit(StatesGroup):
     waiting_number = State()
 
-def setup_menu_reply_router(processor):
+def setup_menu_reply_router(processor, telemetry=None, settings=None):
     router = Router(name="menu_reply")
 
     def _fmt_goal(v: int | None) -> str:
@@ -97,6 +97,8 @@ def setup_menu_reply_router(processor):
 
     @router.message(F.text.casefold() == "оплатить подписку")
     async def pay_now(msg: types.Message):
+        if telemetry:
+            await telemetry.incr("payments.intent_total")
         pay_text = await processor.build_pay_text(msg.chat.id)
         await msg.answer(pay_text, reply_markup=start_kb(has_access=False))
 

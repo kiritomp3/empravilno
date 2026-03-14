@@ -7,6 +7,7 @@ from infrastructure.memory_store import InMemoryChatSessionStore
 from infrastructure.redis_store import RedisChatSessionStore
 from infrastructure.redis_store import RedisNutritionLogStore
 from infrastructure.redis_store import RedisUserProfileStore
+from infrastructure.telemetry import RedisTelemetry
 from usecases.message_processing import MessageProcessor
 
 class Container:
@@ -25,6 +26,7 @@ class Container:
         )
 
         self.profiles = RedisUserProfileStore(settings.redis_url)
+        self.telemetry = RedisTelemetry(settings.redis_url)
 
         self.processor = MessageProcessor(self.llm, self.sessions, self.nutrition, self.profiles, settings=self.settings)
 

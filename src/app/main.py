@@ -15,12 +15,21 @@ from app.http import app as http_app
 async def _run() -> None:
     container = build_container()
     setup_logging(container.settings.log_level)
+    await container.telemetry.incr("app.starts_total")
 
     bot = build_bot(container.settings.bot_token)
-    chat_router = chat_router_module.setup(container.processor)
-    menu_reply_router = menu_reply_router_module.setup_menu_reply_router(container.processor)
+    chat_router = chat_router_module.setup(container.processor, telemetry=container.telemetry)
+    menu_reply_router = menu_reply_router_module.setup_menu_reply_router(
+        container.processor,
+        telemetry=container.telemetry,
+        settings=container.settings,
+    )
 
-    start_router = start_router_module.setup_start_router(container.processor)
+    start_router = start_router_module.setup_start_router(
+        container.processor,
+        telemetry=container.telemetry,
+        settings=container.settings,
+    )
 
     dp = build_dispatcher(chat_router, container.settings.log_level, start_router_with_processor=start_router, menu_reply_router_with_processor=menu_reply_router)
 
