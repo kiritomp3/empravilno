@@ -7,6 +7,12 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 
+def _round_macro(v, digits=1) -> float:
+    try:
+        return round(float(v), digits)
+    except Exception:
+        return 0.0
+
 def _num(v, digits=1):
     try:
         if isinstance(v, (int,)):
@@ -34,18 +40,19 @@ def render_day_table(items: list[dict]) -> str:
             kcal = round(float(total.get("kcal", 0)))
         except Exception:
             kcal = 0
-        try:
-            p = float(total.get("protein_g", 0))
-            f = float(total.get("fat_g", 0))
-            c = float(total.get("carb_g", 0))
-        except Exception:
-            p = f = c = 0.0
+        p = _round_macro(total.get("protein_g", 0))
+        f = _round_macro(total.get("fat_g", 0))
+        c = _round_macro(total.get("carb_g", 0))
 
         rows.append((name, kcal, p, f, c))
         totals["kcal"] += kcal
         totals["protein_g"] += p
         totals["fat_g"] += f
         totals["carb_g"] += c
+
+    totals["protein_g"] = _round_macro(totals["protein_g"])
+    totals["fat_g"] = _round_macro(totals["fat_g"])
+    totals["carb_g"] = _round_macro(totals["carb_g"])
 
     if not rows:
         return "<pre>Пусто</pre>"
@@ -88,10 +95,10 @@ def items_to_dataframe(items: list[dict]) -> pd.DataFrame:
         rows.append({
             "Название": name,
             "Кол-во": qty,
-            "Ккал": tot.get("kcal", 0),
-            "Белки, г": tot.get("protein_g", 0.0),
-            "Жиры, г": tot.get("fat_g", 0.0),
-            "Углеводы, г": tot.get("carb_g", 0.0),
+            "Ккал": round(float(tot.get("kcal", 0) or 0)),
+            "Белки, г": _round_macro(tot.get("protein_g", 0.0)),
+            "Жиры, г": _round_macro(tot.get("fat_g", 0.0)),
+            "Углеводы, г": _round_macro(tot.get("carb_g", 0.0)),
         })
 
     df = pd.DataFrame(rows, columns=["Название", "Кол-во", "Ккал", "Белки, г", "Жиры, г", "Углеводы, г"])
@@ -101,9 +108,9 @@ def items_to_dataframe(items: list[dict]) -> pd.DataFrame:
             "Название": "ИТОГО",
             "Кол-во": "",
             "Ккал": int(df["Ккал"].sum()),
-            "Белки, г": float(df["Белки, г"].sum()),
-            "Жиры, г": float(df["Жиры, г"].sum()),
-            "Углеводы, г": float(df["Углеводы, г"].sum()),
+            "Белки, г": _round_macro(df["Белки, г"].sum()),
+            "Жиры, г": _round_macro(df["Жиры, г"].sum()),
+            "Углеводы, г": _round_macro(df["Углеводы, г"].sum()),
         }
         df = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
 
