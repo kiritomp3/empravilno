@@ -8,6 +8,14 @@ class ChatSessionStore(Protocol):
 
 class LLMClient(Protocol):
     async def reply(self, *, user_text: str, chat_id: int) -> str: ...
+    async def reply_with_image(
+        self,
+        *,
+        chat_id: int,
+        image_bytes: bytes,
+        image_mime_type: str,
+        user_text: str = "",
+    ) -> str: ...
 
 class NutritionLogStore(Protocol):
     async def add_items(self, chat_id: int, items: list[dict[str, Any]]) -> None: ...

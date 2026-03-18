@@ -1,4 +1,5 @@
 from __future__ import annotations
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from html import escape
 from typing import Iterable
 import tempfile
@@ -6,10 +7,18 @@ from pathlib import Path
 
 import pandas as pd
 import matplotlib.pyplot as plt
+from openpyxl import load_workbook
+
+def _to_decimal(v) -> Decimal:
+    try:
+        return Decimal(str(v))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
 
 def _round_macro(v, digits=1) -> float:
     try:
-        return round(float(v), digits)
+        quant = Decimal("1") if digits == 0 else Decimal("1").scaleb(-digits)
+        return float(_to_decimal(v).quantize(quant, rounding=ROUND_HALF_UP))
     except Exception:
         return 0.0
 
@@ -31,28 +40,31 @@ def render_day_table(items: list[dict]) -> str:
       - total: { kcal, protein_g, fat_g, carb_g }
     """
     rows = []
-    totals = {"kcal": 0, "protein_g": 0.0, "fat_g": 0.0, "carb_g": 0.0}
+    totals = {
+        "kcal": Decimal("0"),
+        "protein_g": Decimal("0"),
+        "fat_g": Decimal("0"),
+        "carb_g": Decimal("0"),
+    }
 
     for it in items:
         name = (it.get("name") or "—").strip()
         total = it.get("total") or {}
-        try:
-            kcal = round(float(total.get("kcal", 0)))
-        except Exception:
-            kcal = 0
+        kcal = int(_round_macro(total.get("kcal", 0), 0))
         p = _round_macro(total.get("protein_g", 0))
         f = _round_macro(total.get("fat_g", 0))
         c = _round_macro(total.get("carb_g", 0))
 
         rows.append((name, kcal, p, f, c))
-        totals["kcal"] += kcal
-        totals["protein_g"] += p
-        totals["fat_g"] += f
-        totals["carb_g"] += c
+        totals["kcal"] += _to_decimal(total.get("kcal", 0))
+        totals["protein_g"] += _to_decimal(total.get("protein_g", 0))
+        totals["fat_g"] += _to_decimal(total.get("fat_g", 0))
+        totals["carb_g"] += _to_decimal(total.get("carb_g", 0))
 
-    totals["protein_g"] = _round_macro(totals["protein_g"])
-    totals["fat_g"] = _round_macro(totals["fat_g"])
-    totals["carb_g"] = _round_macro(totals["carb_g"])
+    totals["kcal"] = int(_round_macro(totals["kcal"], 0))
+    totals["protein_g"] = _round_macro(totals["protein_g"], 1)
+    totals["fat_g"] = _round_macro(totals["fat_g"], 1)
+    totals["carb_g"] = _round_macro(totals["carb_g"], 1)
 
     if not rows:
         return "<pre>Пусто</pre>"
@@ -88,18 +100,32 @@ def items_to_dataframe(items: list[dict]) -> pd.DataFrame:
       }
     """
     rows = []
+    totals = {
+        "kcal": Decimal("0"),
+        "protein_g": Decimal("0"),
+        "fat_g": Decimal("0"),
+        "carb_g": Decimal("0"),
+    }
     for it in items:
         name = it.get("name", "")
         qty  = it.get("quantity", "")
         tot  = it.get("total", {}) or {}
+        kcal = int(_round_macro(tot.get("kcal", 0), 0))
+        protein = _round_macro(tot.get("protein_g", 0.0))
+        fat = _round_macro(tot.get("fat_g", 0.0))
+        carb = _round_macro(tot.get("carb_g", 0.0))
         rows.append({
             "Название": name,
             "Кол-во": qty,
-            "Ккал": round(float(tot.get("kcal", 0) or 0)),
-            "Белки, г": _round_macro(tot.get("protein_g", 0.0)),
-            "Жиры, г": _round_macro(tot.get("fat_g", 0.0)),
-            "Углеводы, г": _round_macro(tot.get("carb_g", 0.0)),
+            "Ккал": kcal,
+            "Белки, г": protein,
+            "Жиры, г": fat,
+            "Углеводы, г": carb,
         })
+        totals["kcal"] += _to_decimal(tot.get("kcal", 0))
+        totals["protein_g"] += _to_decimal(tot.get("protein_g", 0))
+        totals["fat_g"] += _to_decimal(tot.get("fat_g", 0))
+        totals["carb_g"] += _to_decimal(tot.get("carb_g", 0))
 
     df = pd.DataFrame(rows, columns=["Название", "Кол-во", "Ккал", "Белки, г", "Жиры, г", "Углеводы, г"])
 
@@ -107,10 +133,10 @@ def items_to_dataframe(items: list[dict]) -> pd.DataFrame:
         totals = {
             "Название": "ИТОГО",
             "Кол-во": "",
-            "Ккал": int(df["Ккал"].sum()),
-            "Белки, г": _round_macro(df["Белки, г"].sum()),
-            "Жиры, г": _round_macro(df["Жиры, г"].sum()),
-            "Углеводы, г": _round_macro(df["Углеводы, г"].sum()),
+            "Ккал": int(_round_macro(totals["kcal"], 0)),
+            "Белки, г": _round_macro(totals["protein_g"], 1),
+            "Жиры, г": _round_macro(totals["fat_g"], 1),
+            "Углеводы, г": _round_macro(totals["carb_g"], 1),
         }
         df = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
 
@@ -122,8 +148,16 @@ def save_dataframe_as_xlsx(df: pd.DataFrame, base_name: str = "nutrition_day") -
     """
     tmpdir = Path(tempfile.gettempdir())
     path = tmpdir / f"{base_name}.xlsx"
-    # engine='openpyxl' выбирается автоматически, так как установлен openpyxl
     df.to_excel(path, index=False)
+    wb = load_workbook(path)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2):
+        if len(row) >= 6:
+            row[2].number_format = "0"
+            row[3].number_format = "0.0"
+            row[4].number_format = "0.0"
+            row[5].number_format = "0.0"
+    wb.save(path)
     return path
 
 def save_dataframe_as_csv(df: pd.DataFrame, base_name: str = "nutrition_day") -> Path:

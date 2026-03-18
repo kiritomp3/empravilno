@@ -1,4 +1,5 @@
 from __future__ import annotations
+import base64
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from openai import AsyncOpenAI
 from pydantic import BaseModel
@@ -9,9 +10,9 @@ class OpenAIConfig(BaseModel):
 
 # --- ВАЖНО: системный промпт помощника по питанию ---
 NUTRITION_SYSTEM_PROMPT = """
-Ты — лаконичный и полезный помощник по питанию. Твоя задача — из коротких фраз пользователя
-(например: «я съел 1 бургер со свининой, 2 пачки чипсов, 3 авокадо») определить продукты и количества,
-привести их к стандартным порциям и посчитать калории, белки, жиры и углеводы.
+Ты — лаконичный и полезный помощник по питанию. Твоя задача — по коротким фразам пользователя
+или по фото еды определить продукты и количества, привести их к стандартным порциям и посчитать
+калории, белки, жиры и углеводы.
 
 Правила:
 1) Если граммы/вес не указаны — используй СТАНДАРТНУЮ ПОРЦИЮ.
@@ -19,6 +20,8 @@ NUTRITION_SYSTEM_PROMPT = """
 3) Если есть сомнение — делай разумное допущение и укажи его в поле "assumptions".
 4) Всегда давай ИТОГИ по дню и ПОСТРОЧНО по каждой позиции.
 5) Возвращай СТРОГО JSON (без пояснительного текста).
+6) Если пользователь прислал фото еды или тарелки с блюдом — определи, что на фото, оцени массу/порции
+   максимально реалистично и укажи ключевые допущения в поле "assumptions".
 
 Стандартные порции (усреднённые, ≈±10%):
 - «бургер со свининой», 1 шт: 520 ккал; Б 25 г; Ж 28 г; У 45 г
@@ -123,17 +126,46 @@ class OpenAILLMClient:
         retry=retry_if_exception_type(Exception),
     )
     async def reply(self, *, user_text: str, chat_id: int) -> str:
-        messages = [{"role": "system", "content": NUTRITION_SYSTEM_PROMPT}]
-        messages.extend(FEW_SHOT)   # если у вас есть few-shot
-        messages.append({"role": "user", "content": user_text})
+        return await self._complete(messages=[{"role": "user", "content": user_text}])
 
-        # Просим строго JSON-объект. Даже если модель сорвётся,
-        # наш extract_json_object подстрахует.
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        retry=retry_if_exception_type(Exception),
+    )
+    async def reply_with_image(
+        self,
+        *,
+        chat_id: int,
+        image_bytes: bytes,
+        image_mime_type: str,
+        user_text: str = "",
+    ) -> str:
+        prompt_text = (
+            "Пользователь прислал фото еды. Определи блюда на фото, оцени порции и верни JSON."
+        )
+        if user_text.strip():
+            prompt_text += f" Дополнительный комментарий пользователя: {user_text.strip()}"
+
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        data_url = f"data:{image_mime_type};base64,{image_b64}"
+        user_content = [
+            {"type": "text", "text": prompt_text},
+            {"type": "image_url", "image_url": {"url": data_url}},
+        ]
+        return await self._complete(messages=[{"role": "user", "content": user_content}])
+
+    async def _complete(self, *, messages: list[dict]) -> str:
+        payload = [{"role": "system", "content": NUTRITION_SYSTEM_PROMPT}]
+        payload.extend(FEW_SHOT)
+        payload.extend(messages)
+
         resp = await self._client.chat.completions.create(
             model=self._model,
-            messages=messages,
+            messages=payload,
             temperature=0.1,
-            max_tokens=1200,                 # запас побольше для длинных списков
+            max_tokens=1200,
             response_format={"type": "json_object"},
         )
         content = resp.choices[0].message.content

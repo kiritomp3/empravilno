@@ -1,5 +1,4 @@
 from __future__ import annotations
-import json
 from typing import Any
 from domain.ports import LLMClient, ChatSessionStore, NutritionLogStore, UserProfileStore
 from services.rendering import render_day_table, build_day_files  # ← ДОПОЛНЕН ИМПОРТ
@@ -100,12 +99,40 @@ class MessageProcessor:
             await self._sessions.set_active(chat_id, True)
 
         raw = await self._llm.reply(user_text=text, chat_id=chat_id)
+        return await self._build_nutrition_reply(chat_id, raw)
+
+    async def process_user_photo(
+        self,
+        chat_id: int,
+        image_bytes: bytes,
+        image_mime_type: str,
+        caption: str = "",
+    ) -> str | dict:
+        if not await self._has_active_subscription(chat_id):
+            return self._build_payment_text(chat_id)
+
+        active = await self._sessions.is_active(chat_id)
+        if not active:
+            await self._sessions.set_active(chat_id, True)
+
+        raw = await self._llm.reply_with_image(
+            chat_id=chat_id,
+            image_bytes=image_bytes,
+            image_mime_type=image_mime_type,
+            user_text=caption,
+        )
+        return await self._build_nutrition_reply(chat_id, raw)
+
+    async def _build_nutrition_reply(self, chat_id: int, raw: str) -> str | dict:
         data = extract_json_object(raw)
 
         if isinstance(data, dict) and isinstance(data.get("items"), list):
             items: list[dict[str, Any]] = data["items"]
             if not items:
-                return "Не смог распознать блюда. Попробуйте ещё раз (например: «я съел 200 г курицы и 150 г риса»)."
+                return (
+                    "Не смог распознать блюда. Попробуйте ещё раз текстом "
+                    "или пришлите более понятное фото еды."
+                )
 
             await self._nutrition.add_items(chat_id, items)
             log = await self._nutrition.get_log(chat_id)
