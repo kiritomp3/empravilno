@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any
 from domain.ports import LLMClient, ChatSessionStore, NutritionLogStore, UserProfileStore
-from services.rendering import render_day_table, build_day_files  # ← ДОПОЛНЕН ИМПОРТ
+from services.rendering import DaySummary, build_day_files
 from services.text_normalizer import extract_json_object
 from services.payments import build_yoomoney_quickpay_link
 from datetime import date
@@ -9,9 +9,9 @@ from datetime import date
 RESPONSE_KEYS = ("items",)
 
 WELCOME_TEXT = (
-    "Привет! Я бот, который поможет посчитать БЖУ. "
+    "Привет! Я бот, который поможет считать питание и спорт. "
     "Вам начислено +2 дня подписки за регистрацию.\n\n"
-    "Нажмите кнопку, чтобы начать, или задайте вопрос."
+    "Сначала давайте заполним рост и вес, чтобы рекомендации были точнее."
 )
 
 class MessageProcessor:
@@ -56,6 +56,14 @@ class MessageProcessor:
         await self._profiles.set_calories_goal(chat_id, goal)
         return f"Цель по калориям обновлена: {goal if goal is not None else 'не задана'} ккал/день."
 
+    async def set_body_metrics(self, chat_id: int, *, height_cm: int | None, weight_kg: float | None) -> str:
+        if height_cm is not None and not 100 <= height_cm <= 250:
+            return "Рост должен быть в диапазоне 100-250 см."
+        if weight_kg is not None and not 30 <= weight_kg <= 350:
+            return "Вес должен быть в диапазоне 30-350 кг."
+        await self._profiles.set_body_metrics(chat_id, height_cm=height_cm, weight_kg=weight_kg)
+        return "Данные профиля обновлены."
+
     async def build_ref_link(self, bot_username: str, chat_id: int) -> str:
         # Для deep-link: https://t.me/<bot_username>?start=ref_<chat_id>
         return f"https://t.me/{bot_username}?start=ref_{chat_id}"
@@ -65,10 +73,15 @@ class MessageProcessor:
         if not p:
             return "Профиль не найден."
         goal = f"{p.calories_goal} ккал/день" if p.calories_goal else "не задана"
+        height = f"{p.height_cm} см" if p.height_cm else "не указан"
+        weight = f"{p.weight_kg:.1f}".rstrip("0").rstrip(".") + " кг" if p.weight_kg else "не указан"
+        username = f"@{p.username}" if p.username else "-"
         return (
             f"👤 Профиль\n"
             f"Имя: {p.name or '-'}\n"
-            f"Юзернейм: @{p.username}" + ("\n" if p.username else "\n") +
+            f"Юзернейм: {username}\n"
+            f"Рост: {height}\n"
+            f"Вес: {weight}\n"
             f"Цель по калориям: {goal}\n"
             f"Подписка: {p.subscribe_until or 'нет'}\n"
             f"Рефералов: {p.referals}"
@@ -126,13 +139,23 @@ class MessageProcessor:
     async def _build_nutrition_reply(self, chat_id: int, raw: str) -> str | dict:
         data = extract_json_object(raw)
 
-        if isinstance(data, dict) and isinstance(data.get("items"), list):
-            items: list[dict[str, Any]] = data["items"]
+        if isinstance(data, dict) and (
+            isinstance(data.get("items"), list) or isinstance(data.get("activities"), list)
+        ):
+            items: list[dict[str, Any]] = list(data.get("items") or [])
+            activities = data.get("activities")
+            if isinstance(activities, list):
+                items.extend(activities)
+
             if not items:
                 return (
-                    "Не смог распознать блюда. Попробуйте ещё раз текстом "
+                    "Не смог распознать еду или активность. Попробуйте ещё раз текстом "
                     "или пришлите более понятное фото еды."
                 )
+
+            for item in items:
+                if item.get("entry_type") not in {"food", "activity"}:
+                    item["entry_type"] = "food"
 
             await self._nutrition.add_items(chat_id, items)
             log = await self._nutrition.get_log(chat_id)
@@ -141,9 +164,10 @@ class MessageProcessor:
             if files["empty"]:
                 return "Записей пока нет. Добавьте блюда, и я пришлю таблицу."
 
+            profile = await self._profiles.get(chat_id)
             return {
                 "photo": str(files["png"]),
-                "caption": files["caption"],
+                "caption": self._build_day_caption(files["summary"], profile),
             # "document": str(files["xlsx"])  # при желании
             }
         else:
@@ -163,9 +187,10 @@ class MessageProcessor:
             return "Последняя запись удалена. Дневник пуст."
 
         files = build_day_files(log, prefer_xlsx=True)
+        profile = await self._profiles.get(chat_id)
         return {
             "photo": str(files["png"]),
-            "caption": files["caption"],
+            "caption": self._build_day_caption(files["summary"], profile),
         }
     async def has_access(self, chat_id: int) -> bool:
         p = await self._profiles.get(chat_id)
@@ -213,3 +238,42 @@ class MessageProcessor:
             f"Оплатить по ссылке:\n{link}\n\n"
             "После оплаты дни подпишки начислятся автоматически (обычно мгновенно)."
         )
+
+    def _build_day_caption(self, summary: DaySummary, profile) -> str:
+        recommendation = self._build_recommendation(summary, profile)
+        return (
+            "Итоги за день\n\n"
+            f"Всего калорий: {summary.consumed_kcal} ккал\n"
+            f"Всего белков: {summary.protein_g:.1f} г\n"
+            f"Всего жиров: {summary.fat_g:.1f} г\n"
+            f"Всего углеводов: {summary.carb_g:.1f} г\n"
+            f"Сожжено калорий: {summary.burned_kcal} ккал\n"
+            f"Итог калорий: {summary.net_kcal} ккал\n"
+            f"Краткая рекомендация: {recommendation}"
+        )
+
+    def _build_recommendation(self, summary: DaySummary, profile) -> str:
+        goal = getattr(profile, "calories_goal", None) if profile else None
+        height_cm = getattr(profile, "height_cm", None) if profile else None
+        weight_kg = getattr(profile, "weight_kg", None) if profile else None
+
+        if goal is not None:
+            delta = summary.net_kcal - goal
+            if delta > 250:
+                return "Сегодня вы заметно выше цели. Если хотите дефицит, следующий приём пищи лучше сделать легче."
+            if delta < -250:
+                return "Сегодня вы заметно ниже цели. Добавьте сытный приём пищи или перекус с белком."
+            return "Баланс дня близок к цели. Старайтесь удерживать такой ритм и добирать белок равномерно."
+
+        if height_cm and weight_kg:
+            height_m = height_cm / 100
+            bmi = weight_kg / (height_m * height_m)
+            if bmi < 18.5:
+                return "Вес выглядит невысоким относительно роста. Не занижайте калорийность и следите за регулярным питанием."
+            if bmi > 27:
+                return "Если цель в снижении веса, держите умеренный дефицит и продолжайте добавлять активность без перегруза."
+            return "День выглядит сбалансированно. Для более точных советов задайте цель по калориям в профиле."
+
+        if summary.burned_kcal > 0:
+            return "Активность учтена. После тренировочного дня особенно полезно следить за водой и белком."
+        return "Заполните рост, вес и цель по калориям, и рекомендации станут заметно точнее."

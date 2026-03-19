@@ -10,6 +10,11 @@ from presentation.keyboards.reply import start_kb, main_menu_kb
 class GoalEdit(StatesGroup):
     waiting_number = State()
 
+
+class BodyMetricsEdit(StatesGroup):
+    waiting_height = State()
+    waiting_weight = State()
+
 def setup_menu_reply_router(processor, telemetry=None, settings=None):
     router = Router(name="menu_reply")
 
@@ -31,7 +36,11 @@ def setup_menu_reply_router(processor, telemetry=None, settings=None):
     @router.message(F.text == "⬅️ Назад")
     async def back_to_start(msg: types.Message, state: FSMContext):
         await state.clear()
-        await msg.answer("Вы в стартовом меню.", reply_markup=start_kb())
+        has_access = await processor.has_access(msg.chat.id)
+        await msg.answer(
+            "Можно просто написать, что вы съели или какую активность сделали.",
+            reply_markup=start_kb(has_access=has_access),
+        )
 
     # Профиль
     @router.message(F.text.casefold() == "профиль")
@@ -75,25 +84,59 @@ def setup_menu_reply_router(processor, telemetry=None, settings=None):
         await state.clear()
         await msg.answer(f"Цель по калориям обновлена: <b>{goal} ккал/день</b> ✅", reply_markup=main_menu_kb())
 
-    # Добавить приём пищи — просто просим ввести текст
-    @router.message(F.text.casefold() == "добавить приём пищи")
-    async def add_meal(msg: types.Message):
-        # Без FSM: следующее обычное текстовое сообщение поймает ваш существующий чат-роутер и распарсит как обычно
-        await msg.answer(
-            "Напишите, что вы съели (пример: «я съел 200 г курицы и 150 г риса»).",
-            reply_markup=start_kb()
+    @router.message(F.text.casefold() == "рост и вес")
+    async def ask_body_metrics(msg: types.Message, state: FSMContext):
+        p = await processor._profiles.get(msg.chat.id)
+        current_height = f"{p.height_cm} см" if p and p.height_cm else "не указан"
+        current_weight = (
+            f"{p.weight_kg:.1f}".rstrip("0").rstrip(".") + " кг" if p and p.weight_kg else "не указан"
         )
-    
-    @router.message(F.text.casefold() == "добавить приём пищи")
-    async def add_meal(msg: types.Message):
-        if not await processor.has_access(msg.chat.id):
-            pay_text = await processor.build_pay_text(msg.chat.id)
-            await msg.answer(pay_text, reply_markup=start_kb(has_access=False))
+        await state.set_state(BodyMetricsEdit.waiting_height)
+        await msg.answer(
+            "📐 Параметры профиля\n\n"
+            f"Текущий рост: <b>{current_height}</b>\n"
+            f"Текущий вес: <b>{current_weight}</b>\n\n"
+            "Введите рост в сантиметрах. Например: 178",
+            reply_markup=main_menu_kb()
+        )
+
+    @router.message(BodyMetricsEdit.waiting_height, F.text)
+    async def receive_height(msg: types.Message, state: FSMContext):
+        raw = (msg.text or "").strip().replace(",", ".")
+        if not raw.isdigit():
+            await msg.answer("Введите рост целым числом в сантиметрах. Например: 178")
             return
-        await msg.answer(
-            "Напишите, что вы съели (пример: «я съел 200 г курицы и 150 г риса»).",
-            reply_markup=start_kb(has_access=True)
+
+        height_cm = int(raw)
+        if not 100 <= height_cm <= 250:
+            await msg.answer("Рост должен быть в пределах 100-250 см.")
+            return
+
+        await state.update_data(height_cm=height_cm)
+        await state.set_state(BodyMetricsEdit.waiting_weight)
+        await msg.answer("Теперь введите вес в килограммах. Например: 72.5")
+
+    @router.message(BodyMetricsEdit.waiting_weight, F.text)
+    async def receive_weight(msg: types.Message, state: FSMContext):
+        raw = (msg.text or "").strip().replace(",", ".").replace(" ", "")
+        try:
+            weight_kg = float(raw)
+        except ValueError:
+            await msg.answer("Введите вес числом. Например: 72.5")
+            return
+
+        if not 30 <= weight_kg <= 350:
+            await msg.answer("Вес должен быть в пределах 30-350 кг.")
+            return
+
+        data = await state.get_data()
+        await processor.set_body_metrics(
+            msg.chat.id,
+            height_cm=data.get("height_cm"),
+            weight_kg=weight_kg,
         )
+        await state.clear()
+        await msg.answer("Рост и вес сохранены ✅", reply_markup=main_menu_kb())
 
     @router.message(F.text.casefold() == "оплатить подписку")
     async def pay_now(msg: types.Message):

@@ -105,6 +105,8 @@ class RedisUserProfileStore:
                 name=obj.get("name"),
                 username=obj.get("username"),
                 calories_goal=obj.get("calories_goal"),
+                height_cm=obj.get("height_cm"),
+                weight_kg=obj.get("weight_kg"),
                 subscribe_until=(obj.get("subscribe_until") or None),
                 referals=int(obj.get("referals", 0)),
                 referral_usernames=referral_usernames,
@@ -131,6 +133,8 @@ class RedisUserProfileStore:
             "name": profile.name,
             "username": profile.username,
             "calories_goal": profile.calories_goal,
+            "height_cm": profile.height_cm,
+            "weight_kg": profile.weight_kg,
             "subscribe_until": profile.subscribe_until,  # новое поле
             "referals": profile.referals,
             "referral_usernames": profile.referral_usernames,
@@ -158,6 +162,8 @@ class RedisUserProfileStore:
             name=name,
             username=username,
             calories_goal=None,
+            height_cm=None,
+            weight_kg=None,
             subscribe_until=None,
             referals=0,
             referral_usernames=[],
@@ -175,6 +181,8 @@ class RedisUserProfileStore:
                 name=None,
                 username=None,
                 calories_goal=None,
+                height_cm=None,
+                weight_kg=None,
                 subscribe_until=None,
                 referals=0,
                 referral_usernames=[],
@@ -202,11 +210,31 @@ class RedisUserProfileStore:
                 name=None,
                 username=None,
                 calories_goal=None,
+                height_cm=None,
+                weight_kg=None,
                 subscribe_until=None,
                 referals=0,
                 referral_usernames=[],
             )
         p.calories_goal = int(goal) if goal is not None else None
+        await self.upsert(p)
+
+    async def set_body_metrics(self, chat_id: int, *, height_cm: int | None, weight_kg: float | None) -> None:
+        p = await self.get(chat_id)
+        if not p:
+            p = UserProfile(
+                chat_id=chat_id,
+                name=None,
+                username=None,
+                calories_goal=None,
+                height_cm=None,
+                weight_kg=None,
+                subscribe_until=None,
+                referals=0,
+                referral_usernames=[],
+            )
+        p.height_cm = int(height_cm) if height_cm is not None else None
+        p.weight_kg = float(weight_kg) if weight_kg is not None else None
         await self.upsert(p)
     
     async def add_referral_username(self, chat_id: int, referred_username: str | None) -> None:
@@ -222,6 +250,8 @@ class RedisUserProfileStore:
                 name=None,
                 username=None,
                 calories_goal=None,
+                height_cm=None,
+                weight_kg=None,
                 subscribe_until=None,
                 referals=0,
                 referral_usernames=[],
