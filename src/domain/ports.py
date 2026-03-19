@@ -16,6 +16,13 @@ class LLMClient(Protocol):
         image_mime_type: str,
         user_text: str = "",
     ) -> str: ...
+    async def recommend_day(
+        self,
+        *,
+        chat_id: int,
+        summary: dict[str, Any],
+        profile: dict[str, Any],
+    ) -> str: ...
 
 class NutritionLogStore(Protocol):
     async def add_items(self, chat_id: int, items: list[dict[str, Any]]) -> None: ...

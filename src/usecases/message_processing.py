@@ -109,10 +109,12 @@ class MessageProcessor:
         files = build_day_files(log, prefer_xlsx=False)
         profile = await self._profiles.get(chat_id)
         summary = files["summary"]
-        recommendation = self._build_recommendation(summary, profile)
+        recommendation = await self._generate_day_recommendation(chat_id, summary, profile)
         await self._nutrition.clear(chat_id)
         return (
             "День завершён.\n\n"
+            f"Набрано калорий: {summary.consumed_kcal} ккал\n"
+            f"Сожжено калорий: {summary.burned_kcal} ккал\n"
             f"Итог калорий: {summary.net_kcal} ккал\n"
             f"Краткая рекомендация: {recommendation}"
         )
@@ -262,34 +264,39 @@ class MessageProcessor:
         )
 
     def _build_day_caption(self, summary: DaySummary, profile) -> str:
-        recommendation = self._build_recommendation(summary, profile)
+        return f"Итог калорий: {summary.net_kcal} ккал"
+
+    async def _generate_day_recommendation(self, chat_id: int, summary: DaySummary, profile) -> str:
+        summary_payload = {
+            "consumed_kcal": summary.consumed_kcal,
+            "burned_kcal": summary.burned_kcal,
+            "net_kcal": summary.net_kcal,
+            "protein_g": summary.protein_g,
+            "fat_g": summary.fat_g,
+            "carb_g": summary.carb_g,
+            "foods_count": summary.foods_count,
+            "activities_count": summary.activities_count,
+        }
+        profile_payload = {
+            "calories_goal": getattr(profile, "calories_goal", None) if profile else None,
+            "height_cm": getattr(profile, "height_cm", None) if profile else None,
+            "weight_kg": getattr(profile, "weight_kg", None) if profile else None,
+        }
+
+        try:
+            recommendation = await self._llm.recommend_day(
+                chat_id=chat_id,
+                summary=summary_payload,
+                profile=profile_payload,
+            )
+        except Exception:
+            recommendation = ""
+
+        recommendation = (recommendation or "").strip()
+        if recommendation:
+            return recommendation
+
         return (
-            f"Итог калорий: {summary.net_kcal} ккал\n"
-            f"Краткая рекомендация: {recommendation}"
+            "День уже зафиксирован, и это хороший шаг. Старайтесь держать рацион ровным, "
+            "добирать белок и добавлять посильную активность без перегруза."
         )
-
-    def _build_recommendation(self, summary: DaySummary, profile) -> str:
-        goal = getattr(profile, "calories_goal", None) if profile else None
-        height_cm = getattr(profile, "height_cm", None) if profile else None
-        weight_kg = getattr(profile, "weight_kg", None) if profile else None
-
-        if goal is not None:
-            delta = summary.net_kcal - goal
-            if delta > 250:
-                return "Сегодня вы заметно выше цели. Если хотите дефицит, следующий приём пищи лучше сделать легче."
-            if delta < -250:
-                return "Сегодня вы заметно ниже цели. Добавьте сытный приём пищи или перекус с белком."
-            return "Баланс дня близок к цели. Старайтесь удерживать такой ритм и добирать белок равномерно."
-
-        if height_cm and weight_kg:
-            height_m = height_cm / 100
-            bmi = weight_kg / (height_m * height_m)
-            if bmi < 18.5:
-                return "Вес выглядит невысоким относительно роста. Не занижайте калорийность и следите за регулярным питанием."
-            if bmi > 27:
-                return "Если цель в снижении веса, держите умеренный дефицит и продолжайте добавлять активность без перегруза."
-            return "День выглядит сбалансированно. Для более точных советов задайте цель по калориям в профиле."
-
-        if summary.burned_kcal > 0:
-            return "Активность учтена. После тренировочного дня особенно полезно следить за водой и белком."
-        return "Заполните рост, вес и цель по калориям, и рекомендации станут заметно точнее."

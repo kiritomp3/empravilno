@@ -134,6 +134,22 @@ FEW_SHOT = [
     }
 ]
 
+DAY_RECOMMENDATION_SYSTEM_PROMPT = """
+Ты — тёплый и мотивирующий помощник по питанию и активности.
+Твоя задача — по итогам дня дать короткую рекомендацию для пользователя.
+
+Правила:
+1) Пиши только на русском.
+2) Ответ должен быть кратким: 2-4 предложения, без списков.
+3) Тон: поддерживающий, не ругающий, без морализаторства.
+4) Учитывай и рацион, и активность.
+5) Цель по калориям относится только к набранным калориям, не к итоговым после вычета активности.
+6) Если видишь перекос в рационе, мягко подскажи, что улучшить: белок, овощи, вода, полезные жиры, углеводы вокруг нагрузки.
+7) Если активности мало — предложи спокойный и реалистичный вариант. Если активности много — похвали и напомни про восстановление.
+8) Не используй слова вроде "ошибка", "плохо", "вина", "срыв".
+9) Верни только сам текст рекомендации, без заголовков и кавычек.
+"""
+
 class OpenAILLMClient:
     def __init__(self, config: OpenAIConfig) -> None:
         self._client = AsyncOpenAI(api_key=config.api_key)
@@ -175,6 +191,37 @@ class OpenAILLMClient:
             {"type": "image_url", "image_url": {"url": data_url}},
         ]
         return await self._complete(messages=[{"role": "user", "content": user_content}])
+
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        retry=retry_if_exception_type(Exception),
+    )
+    async def recommend_day(
+        self,
+        *,
+        chat_id: int,
+        summary: dict,
+        profile: dict,
+    ) -> str:
+        user_prompt = (
+            "Вот данные по итогу дня пользователя.\n\n"
+            f"Профиль: {profile}\n"
+            f"Итоги дня: {summary}\n\n"
+            "Сформулируй короткую рекомендацию по рациону и активности."
+        )
+        resp = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": DAY_RECOMMENDATION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.4,
+            max_tokens=180,
+        )
+        content = resp.choices[0].message.content
+        return (content or "").strip()
 
     async def _complete(self, *, messages: list[dict]) -> str:
         payload = [{"role": "system", "content": NUTRITION_SYSTEM_PROMPT}]
