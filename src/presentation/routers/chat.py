@@ -9,9 +9,9 @@ router = Router(name="chat")
 
 def setup(processor: MessageProcessor, telemetry=None) -> Router:
 
-    @router.callback_query(F.data == "clear_day")
-    async def on_clear_day(cb: CallbackQuery):
-        reply = await processor.clear_day(cb.message.chat.id)
+    @router.callback_query(F.data == "finish_day")
+    async def on_finish_day(cb: CallbackQuery):
+        reply = await processor.finish_day(cb.message.chat.id)
         show_undo = await processor.has_items(cb.message.chat.id) if hasattr(processor, "has_items") else True
 
         if isinstance(reply, dict) and "photo" in reply:

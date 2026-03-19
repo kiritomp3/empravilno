@@ -101,6 +101,22 @@ class MessageProcessor:
         await self._nutrition.clear(chat_id)
         return "Дневник очищен. Введите продукты/блюда заново."
 
+    async def finish_day(self, chat_id: int) -> str:
+        log = await self._nutrition.get_log(chat_id)
+        if not log:
+            return "День пока пустой. Сначала добавьте еду или активность."
+
+        files = build_day_files(log, prefer_xlsx=False)
+        profile = await self._profiles.get(chat_id)
+        summary = files["summary"]
+        recommendation = self._build_recommendation(summary, profile)
+        await self._nutrition.clear(chat_id)
+        return (
+            "День завершён.\n\n"
+            f"Итог калорий: {summary.net_kcal} ккал\n"
+            f"Краткая рекомендация: {recommendation}"
+        )
+
 
     async def process_user_text(self, chat_id: int, text: str) -> str | dict:
         if not await self._has_active_subscription(chat_id):
@@ -137,7 +153,13 @@ class MessageProcessor:
         return await self._build_nutrition_reply(chat_id, raw)
 
     async def _build_nutrition_reply(self, chat_id: int, raw: str) -> str | dict:
-        data = extract_json_object(raw)
+        try:
+            data = extract_json_object(raw)
+        except Exception:
+            return (
+                "Не смог аккуратно разобрать ответ. Попробуйте отправить сообщение ещё раз "
+                "чуть короче или разделить еду и активность на два сообщения."
+            )
 
         if isinstance(data, dict) and (
             isinstance(data.get("items"), list) or isinstance(data.get("activities"), list)
@@ -242,12 +264,6 @@ class MessageProcessor:
     def _build_day_caption(self, summary: DaySummary, profile) -> str:
         recommendation = self._build_recommendation(summary, profile)
         return (
-            "Итоги за день\n\n"
-            f"Всего калорий: {summary.consumed_kcal} ккал\n"
-            f"Всего белков: {summary.protein_g:.1f} г\n"
-            f"Всего жиров: {summary.fat_g:.1f} г\n"
-            f"Всего углеводов: {summary.carb_g:.1f} г\n"
-            f"Сожжено калорий: {summary.burned_kcal} ккал\n"
             f"Итог калорий: {summary.net_kcal} ккал\n"
             f"Краткая рекомендация: {recommendation}"
         )

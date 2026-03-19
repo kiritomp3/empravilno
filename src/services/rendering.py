@@ -202,22 +202,18 @@ def render_dataframe_to_png(
 
     food_rows = max(len(foods_df), 1)
     activity_rows = max(len(activities_df), 1)
-    fig_height = 2.8 + food_rows * 0.68 + activity_rows * 0.68
+    fig_height = 2.2 + food_rows * 0.68 + activity_rows * 0.68
 
     fig = plt.figure(figsize=(14, fig_height), dpi=220, facecolor="#F6F0E5")
-    fig.text(0.06, 0.955, "Дневник за день", fontsize=24, fontweight="bold", color="#2F3A2D")
-    fig.text(0.06, 0.925, "Питание и спорт в одном отчёте", fontsize=11, color="#6D6A62")
+    fig.text(0.06, 0.955, "@empravilno_bot - отчет", fontsize=22, fontweight="bold", color="#2F3A2D")
 
-    gs = fig.add_gridspec(2, 1, height_ratios=[food_rows + 1.5, activity_rows + 1.5], hspace=0.22)
+    gs = fig.add_gridspec(2, 1, height_ratios=[food_rows + 1.2, activity_rows + 1.2], hspace=0.12)
     food_ax = fig.add_subplot(gs[0])
     act_ax = fig.add_subplot(gs[1])
 
     for ax in (food_ax, act_ax):
         ax.axis("off")
         ax.set_facecolor("#F6F0E5")
-
-    food_ax.text(0.0, 1.08, "Питание", transform=food_ax.transAxes, fontsize=15, fontweight="bold", color="#2F3A2D")
-    act_ax.text(0.0, 1.08, "Спорт активности", transform=act_ax.transAxes, fontsize=15, fontweight="bold", color="#2F3A2D")
 
     food_table = food_ax.table(
         cellText=foods_df.values.tolist() if not foods_df.empty else [["Пока нет записей", "", "", "", "", ""]],
