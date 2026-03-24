@@ -98,12 +98,13 @@ def render_day_table(items: list[dict]) -> str:
 
 def _food_rows(items: list[dict]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    for item in items:
+    for idx, item in enumerate(items, start=1):
         if item.get("entry_type", "food") != "food":
             continue
         total = item.get("total") or {}
         rows.append(
             {
+                "№": idx,
                 "Название": item.get("name", ""),
                 "Кол-во": item.get("quantity", ""),
                 "Ккал": int(_round_macro(total.get("kcal", 0), 0)),
@@ -117,13 +118,14 @@ def _food_rows(items: list[dict]) -> list[dict[str, object]]:
 
 def _activity_rows(items: list[dict]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    for item in items:
+    for idx, item in enumerate(items, start=1):
         if item.get("entry_type") != "activity":
             continue
         total = item.get("total") or {}
         details = item.get("details") or item.get("quantity") or ""
         rows.append(
             {
+                "№": idx,
                 "Активность": item.get("name", ""),
                 "Детали": details,
                 "Сожжено, ккал": int(
@@ -170,16 +172,16 @@ def save_dataframe_as_xlsx(
     wb = load_workbook(path)
     ws = wb["День"]
     for row in ws.iter_rows(min_row=2, max_row=max(2, len(foods_df) + 1)):
-        if len(row) >= 6:
-            row[2].number_format = "0"
-            row[3].number_format = "0.0"
+        if len(row) >= 7:
+            row[3].number_format = "0"
             row[4].number_format = "0.0"
             row[5].number_format = "0.0"
+            row[6].number_format = "0.0"
 
     activity_start = len(foods_df) + 5
     for row in ws.iter_rows(min_row=activity_start + 1, max_row=activity_start + len(activities_df)):
-        if len(row) >= 3:
-            row[2].number_format = "0"
+        if len(row) >= 4:
+            row[3].number_format = "0"
 
     wb.save(path)
     return path
@@ -216,20 +218,20 @@ def render_dataframe_to_png(
         ax.set_facecolor("#F6F0E5")
 
     food_table = food_ax.table(
-        cellText=foods_df.values.tolist() if not foods_df.empty else [["Пока нет записей", "", "", "", "", ""]],
-        colLabels=list(foods_df.columns) if not foods_df.empty else ["Название", "Кол-во", "Ккал", "Белки, г", "Жиры, г", "Углеводы, г"],
-        colWidths=[0.32, 0.16, 0.1, 0.14, 0.14, 0.14],
+        cellText=foods_df.values.tolist() if not foods_df.empty else [["", "Пока нет записей", "", "", "", "", ""]],
+        colLabels=list(foods_df.columns) if not foods_df.empty else ["№", "Название", "Кол-во", "Ккал", "Белки, г", "Жиры, г", "Углеводы, г"],
+        colWidths=[0.06, 0.28, 0.14, 0.1, 0.14, 0.14, 0.14],
         loc="center",
     )
-    _style_table(food_table, max(len(foods_df), 1), 6, "#497D4E", "#305233")
+    _style_table(food_table, max(len(foods_df), 1), 7, "#497D4E", "#305233")
 
     act_table = act_ax.table(
-        cellText=activities_df.values.tolist() if not activities_df.empty else [["Пока нет активностей", "", "0"]],
-        colLabels=list(activities_df.columns) if not activities_df.empty else ["Активность", "Детали", "Сожжено, ккал"],
-        colWidths=[0.34, 0.46, 0.2],
+        cellText=activities_df.values.tolist() if not activities_df.empty else [["", "Пока нет активностей", "", "0"]],
+        colLabels=list(activities_df.columns) if not activities_df.empty else ["№", "Активность", "Детали", "Сожжено, ккал"],
+        colWidths=[0.08, 0.28, 0.44, 0.2],
         loc="center",
     )
-    _style_table(act_table, max(len(activities_df), 1), 3, "#D17A2B", "#8E4E15")
+    _style_table(act_table, max(len(activities_df), 1), 4, "#D17A2B", "#8E4E15")
 
     plt.savefig(path, bbox_inches="tight", pad_inches=0.35, facecolor=fig.get_facecolor())
     plt.close(fig)
@@ -244,6 +246,7 @@ def build_day_files(items: list[dict], prefer_xlsx: bool = True) -> dict:
     foods_df = _rows_to_df(
         foods_rows + [
             {
+                "№": "",
                 "Название": "ИТОГО",
                 "Кол-во": "",
                 "Ккал": summary.consumed_kcal,
@@ -252,11 +255,11 @@ def build_day_files(items: list[dict], prefer_xlsx: bool = True) -> dict:
                 "Углеводы, г": summary.carb_g,
             }
         ],
-        ["Название", "Кол-во", "Ккал", "Белки, г", "Жиры, г", "Углеводы, г"],
+        ["№", "Название", "Кол-во", "Ккал", "Белки, г", "Жиры, г", "Углеводы, г"],
     )
     activities_df = _rows_to_df(
-        activity_rows + [{"Активность": "ИТОГО", "Детали": "", "Сожжено, ккал": summary.burned_kcal}],
-        ["Активность", "Детали", "Сожжено, ккал"],
+        activity_rows + [{"№": "", "Активность": "ИТОГО", "Детали": "", "Сожжено, ккал": summary.burned_kcal}],
+        ["№", "Активность", "Детали", "Сожжено, ккал"],
     )
 
     base = "nutrition_day"

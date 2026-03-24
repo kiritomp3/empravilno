@@ -2,10 +2,15 @@
 from io import BytesIO
 from aiogram import Router, F, types
 from aiogram.types import CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from usecases.message_processing import MessageProcessor
 from presentation.keyboards.common import day_keyboard
 
 router = Router(name="chat")
+
+class RemoveItemsState(StatesGroup):
+    waiting_for_indices = State()
 
 def setup(processor: MessageProcessor, telemetry=None) -> Router:
 
@@ -24,20 +29,29 @@ def setup(processor: MessageProcessor, telemetry=None) -> Router:
             await cb.message.answer(str(reply), reply_markup=day_keyboard(show_undo))
         await cb.answer()
 
-    @router.callback_query(F.data == "undo_last")
-    async def on_undo_last(cb: CallbackQuery):
-        reply = await processor.undo_last(cb.message.chat.id)
-        show_undo = await processor.has_items(cb.message.chat.id) if hasattr(processor, "has_items") else True
+    @router.callback_query(F.data == "remove_items")
+    async def on_remove_items(cb: CallbackQuery, state: FSMContext):
+        await state.set_state(RemoveItemsState.waiting_for_indices)
+        await cb.message.answer(
+            "Введите номер записи из таблицы для удаления.\n"
+            "Можно перечислить несколько через запятую: 1,3,5"
+        )
+        await cb.answer()
+
+    @router.message(RemoveItemsState.waiting_for_indices, F.text)
+    async def on_remove_items_input(msg: types.Message, state: FSMContext):
+        reply = await processor.remove_items_by_input(msg.chat.id, msg.text or "")
+        await state.clear()
+        show_undo = await processor.has_items(msg.chat.id) if hasattr(processor, "has_items") else True
 
         if isinstance(reply, dict) and "photo" in reply:
-            await cb.message.answer_photo(
+            await msg.answer_photo(
                 types.FSInputFile(reply["photo"]),
                 caption=reply.get("caption") or None,
                 reply_markup=day_keyboard(show_undo)
             )
         else:
-            await cb.message.answer(str(reply), reply_markup=day_keyboard(show_undo))
-        await cb.answer()
+            await msg.answer(str(reply), reply_markup=day_keyboard(show_undo))
 
     @router.message(F.text)
     async def on_text(msg: types.Message):

@@ -216,6 +216,44 @@ class MessageProcessor:
             "photo": str(files["png"]),
             "caption": self._build_day_caption(files["summary"], profile),
         }
+
+    async def remove_items_by_input(self, chat_id: int, raw_indices: str) -> str | dict:
+        log = await self._nutrition.get_log(chat_id)
+        if not log:
+            return "Удалять нечего — дневник пуст."
+
+        parsed = self._parse_indices(raw_indices)
+        if not parsed:
+            return "Не понял номера. Введите, например: 1 или 1,3,5"
+
+        removed_count = await self._nutrition.remove_by_indices(chat_id, parsed)
+        if removed_count == 0:
+            return "Не нашёл записей с такими номерами."
+
+        log = await self._nutrition.get_log(chat_id)
+        if not log:
+            return f"Удалено записей: {removed_count}. Дневник пуст."
+
+        files = build_day_files(log, prefer_xlsx=True)
+        profile = await self._profiles.get(chat_id)
+        return {
+            "photo": str(files["png"]),
+            "caption": f"{self._build_day_caption(files['summary'], profile)} | Удалено: {removed_count}",
+        }
+
+    def _parse_indices(self, raw: str) -> set[int]:
+        parts = [p.strip() for p in (raw or "").replace(";", ",").split(",")]
+        result: set[int] = set()
+        for part in parts:
+            if not part:
+                continue
+            if not part.isdigit():
+                return set()
+            value = int(part)
+            if value <= 0:
+                return set()
+            result.add(value)
+        return result
     async def has_access(self, chat_id: int) -> bool:
         p = await self._profiles.get(chat_id)
         return bool(p and p.subscribe_until and date.today() <= date.fromisoformat(p.subscribe_until))
