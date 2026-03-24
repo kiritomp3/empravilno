@@ -3,7 +3,7 @@ from typing import Any
 from domain.ports import LLMClient, ChatSessionStore, NutritionLogStore, UserProfileStore
 from services.rendering import DaySummary, build_day_files
 from services.text_normalizer import extract_json_object
-from services.payments import build_yoomoney_quickpay_link
+from services.subscription_plans import format_subscription_offer_text, format_subscription_topup_text
 from datetime import date
 
 RESPONSE_KEYS = ("items",)
@@ -263,21 +263,20 @@ class MessageProcessor:
         if not (s and s.yoomoney_receiver):
             return ("Подписка недоступна: не задан кошелёк ЮMoney. "
                     "Обратитесь к администратору.")
-        label = f"sub_{chat_id}"
-        link = build_yoomoney_quickpay_link(
-            receiver=s.yoomoney_receiver,
-            amount=s.subscription_price,
-            label=label,
-            targets="Подписка на бота",
-            success_url=s.yoomoney_success_url,
-            fail_url=s.yoomoney_fail_url,
-        )
-        return (
-            "🔒 <b>Подписка закончилась</b>\n\n"
-            f"Стоимость: <b>{s.subscription_price:.2f} ₽</b> за {s.subscription_days} дней.\n"
-            f"Оплатить по ссылке:\n{link}\n\n"
-            "После оплаты дни подпишки начислятся автоматически (обычно мгновенно)."
-        )
+        return format_subscription_offer_text(s, chat_id)
+
+    async def build_topup_pay_text(self, chat_id: int) -> str:
+        """Ссылки на оплату для пользователя с активной подпиской (продление от текущей даты)."""
+        s = self._settings
+        if not (s and s.yoomoney_receiver):
+            return ("Подписка недоступна: не задан кошелёк ЮMoney. "
+                    "Обратитесь к администратору.")
+        current_until: str | None = None
+        if await self._has_active_subscription(chat_id):
+            p = await self._profiles.get(chat_id)
+            if p and p.subscribe_until:
+                current_until = p.subscribe_until
+        return format_subscription_topup_text(s, chat_id, current_until=current_until)
     
     async def _has_active_subscription(self, chat_id: int) -> bool:
         p = await self._profiles.get(chat_id)
@@ -285,21 +284,7 @@ class MessageProcessor:
     
     def _build_payment_text(self, chat_id: int) -> str:
         s = self._settings
-        label = f"sub_{chat_id}"
-        link = build_yoomoney_quickpay_link(
-            receiver=s.yoomoney_receiver,
-            amount=s.subscription_price,
-            label=label,
-            targets="Подписка на бота",
-            success_url=s.yoomoney_success_url,
-            fail_url=s.yoomoney_fail_url,
-        )
-        return (
-            "🔒 <b>Подписка закончилась</b>\n\n"
-            f"Стоимость: <b>{s.subscription_price:.2f} ₽</b> за {s.subscription_days} дней.\n"
-            f"Оплатить по ссылке:\n{link}\n\n"
-            "После оплаты дни подпишки начислятся автоматически (обычно мгновенно)."
-        )
+        return format_subscription_offer_text(s, chat_id)
 
     def _build_day_caption(self, summary: DaySummary, profile) -> str:
         return f"Итог калорий: {summary.net_kcal} ккал"

@@ -6,7 +6,11 @@ from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from app.container import build_container
 import redis.asyncio as redis
-from services.payments import build_yoomoney_quickpay_link
+from services.subscription_plans import (
+    format_retry_payment_hints,
+    parse_yoomoney_label,
+    resolve_plan_for_payment,
+)
 
 router = APIRouter()
 
@@ -27,16 +31,6 @@ def _check_signature(form: dict[str, str], secret: str) -> bool:
     sha = hashlib.sha1(line.encode("utf-8")).hexdigest()
     return sha == (form.get("sha1_hash") or "").lower()
 
-
-def _payment_link(s, chat_id: int) -> str:
-    return build_yoomoney_quickpay_link(
-        receiver=s.yoomoney_receiver,
-        amount=float(s.subscription_price),
-        label=f"sub_{chat_id}",
-        targets="Подписка на бота",
-        success_url=s.yoomoney_success_url,
-        fail_url=s.yoomoney_fail_url,
-    )
 
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNetworkError
 
@@ -118,15 +112,21 @@ async def yoomoney_notify(request: Request):
         return {"ok": True}
 
     label = form.get("label") or ""
-    if not label.startswith("sub_"):
-        print("[yoomoney] skip label:", label)
+    parsed = parse_yoomoney_label(label)
+    if not parsed:
+        if label.startswith("sub_"):
+            print("[yoomoney] bad label:", label)
+        else:
+            print("[yoomoney] skip label:", label)
         return {"ok": True}
 
-    try:
-        chat_id = int(label.split("_", 1)[1])
-    except Exception:
-        print("[yoomoney] bad label:", label)
+    chat_id, plan_slug = parsed
+    plan_resolved = resolve_plan_for_payment(plan_slug, s)
+    if plan_resolved is None:
+        print("[yoomoney] unknown plan in label:", label)
         return {"ok": True}
+
+    price, subscription_days, plan_title = plan_resolved
 
     receiver = (form.get("receiver") or "").strip()
     if receiver and s.yoomoney_receiver and receiver != s.yoomoney_receiver:
@@ -143,11 +143,12 @@ async def yoomoney_notify(request: Request):
     # 1) codepro
     if (form.get("codepro") or "false").lower() == "true":
         await telemetry.incr("payments.codepro_total")
+        retry = format_retry_payment_hints(s, chat_id)
         txt = (
             "⚠️ <b>Платёж в обработке</b>\n\n"
             "ЮMoney прислал платеж с кодом протекции (codepro). "
             "Автозачисление недоступно, дождитесь подтверждения или попробуйте оплатить картой без протекции.\n\n"
-            f"Повторить оплату: { _payment_link(s, chat_id) }"
+            f"Повторить оплату:\n{retry}"
         )
         await _notify(chat_id, txt, s.bot_token)
         return {"ok": True}
@@ -159,14 +160,14 @@ async def yoomoney_notify(request: Request):
     except Exception:
         amount = 0.0
 
-    price = float(s.subscription_price)
     if amount + 1e-9 < price:
         await telemetry.incr("payments.failed_total")
+        retry = format_retry_payment_hints(s, chat_id)
         txt = (
             "⚠️ <b>Оплата не зачислена</b>\n\n"
             f"Получено: <b>{amount:.2f} ₽</b>, требуется: <b>{price:.2f} ₽</b>.\n"
-            "Если это ошибка — попробуйте оплатить ещё раз по ссылке:\n"
-            f"{ _payment_link(s, chat_id) }"
+            "Если это ошибка — попробуйте оплатить ещё раз:\n"
+            f"{retry}"
         )
         print(f"[yoomoney] amount too small: got={amount} need={price}")
         await _notify(chat_id, txt, s.bot_token)
@@ -201,7 +202,7 @@ async def yoomoney_notify(request: Request):
 
     # 3) начисляем дни
     try:
-        added = int(s.subscription_days)
+        added = int(subscription_days)
         new_until = await container.processor._profiles.extend_subscription(chat_id, added)
     except Exception as e:
         print("[yoomoney] increment error:", repr(e))
@@ -224,11 +225,11 @@ async def yoomoney_notify(request: Request):
     # 4) успех
     txt = (
         "✅ <b>Оплата прошла</b>\n\n"
-        f"Мы начислили <b>{int(s.subscription_days)}</b> дней подписки.\n"
+        f"Тариф: <b>{plan_title}</b>. Начислено <b>{int(subscription_days)}</b> дней.\n"
         f"Подписка действует до: <b>{new_until}</b>.\n"
         "Спасибо за поддержку!"
     )
     await _notify(chat_id, txt, s.bot_token)
 
-    print(f"[yoomoney] days +{s.subscription_days} to chat {chat_id}")
+    print(f"[yoomoney] days +{subscription_days} to chat {chat_id} ({plan_title})")
     return {"ok": True}
