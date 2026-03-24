@@ -80,6 +80,41 @@ class RedisNutritionLogStore:
 
         return True
 
+    async def remove_by_indices(self, chat_id: int, indices: set[int]) -> int:
+        """
+        Удаляет записи по 1-based индексам исходного журнала.
+        Возвращает количество удаленных записей.
+        """
+        if not indices:
+            return 0
+
+        key = self._key(chat_id)
+        cur = await self._r.get(key)
+        if not cur:
+            return 0
+
+        try:
+            arr = json.loads(cur)
+        except Exception:
+            return 0
+
+        if not isinstance(arr, list) or not arr:
+            return 0
+
+        valid_positions = {i for i in indices if 1 <= i <= len(arr)}
+        if not valid_positions:
+            return 0
+
+        filtered = [item for pos, item in enumerate(arr, start=1) if pos not in valid_positions]
+        removed_count = len(arr) - len(filtered)
+
+        if filtered:
+            await self._r.set(key, json.dumps(filtered, ensure_ascii=False))
+        else:
+            await self._r.delete(key)
+
+        return removed_count
+
 
 class RedisUserProfileStore:
     def __init__(self, url: str, key_prefix: str = "bot:user:") -> None:
