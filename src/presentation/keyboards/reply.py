@@ -18,6 +18,7 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="Профиль"), KeyboardButton(text="Цель по калориям")],
             [KeyboardButton(text="Рост и вес"), KeyboardButton(text="Реф. ссылка")],
+            [KeyboardButton(text="Докупить подписку")],
             [KeyboardButton(text="⬅️ Назад")],
         ],
         resize_keyboard=True,

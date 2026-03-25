@@ -45,6 +45,8 @@ YOOMONEY_RECEIVER=4100...
 YOOMONEY_SECRET=...
 YOOMONEY_SUCCESS_URL=https://bot.example.com/payment/success
 YOOMONEY_FAIL_URL=https://bot.example.com/payment/fail
+# Только для старых ссылок оплаты без суффикса тарифа (sub_<chat_id>).
+# Новые тарифы: неделя 50 ₽ / 7 дн., год 2500 ₽ / 365 дн. — зашиты в коде.
 SUBSCRIPTION_PRICE=10
 SUBSCRIPTION_DAYS=30
 ```

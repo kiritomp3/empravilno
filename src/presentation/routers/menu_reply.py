@@ -145,4 +145,11 @@ def setup_menu_reply_router(processor, telemetry=None, settings=None):
         pay_text = await processor.build_pay_text(msg.chat.id)
         await msg.answer(pay_text, reply_markup=start_kb(has_access=False))
 
+    @router.message(F.text.casefold() == "докупить подписку")
+    async def topup_subscription(msg: types.Message):
+        if telemetry:
+            await telemetry.incr("payments.topup_intent_total")
+        pay_text = await processor.build_topup_pay_text(msg.chat.id)
+        await msg.answer(pay_text, reply_markup=main_menu_kb())
+
     return router
