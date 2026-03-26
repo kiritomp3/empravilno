@@ -14,13 +14,13 @@ class SubscriptionPlan:
     title: str
 
 
-# Актуальные тарифы в UI и для проверки суммы в webhook.
-STANDARD_PLANS: tuple[SubscriptionPlan, ...] = (
-    SubscriptionPlan(slug="w7", price_rub=50.0, days=7, title="Неделя"),
-    SubscriptionPlan(slug="y365", price_rub=2500.0, days=365, title="Год"),
-)
-
-_PLANS_BY_SLUG = {p.slug: p for p in STANDARD_PLANS}
+def get_subscription_plans(settings: Settings) -> tuple[SubscriptionPlan, ...]:
+    month_days = int(settings.subscription_days) if int(settings.subscription_days) > 0 else 30
+    return (
+        SubscriptionPlan(slug="w7", price_rub=50.0, days=7, title="Неделя"),
+        SubscriptionPlan(slug="m30", price_rub=float(settings.subscription_price), days=month_days, title="Месяц"),
+        SubscriptionPlan(slug="y365", price_rub=1500.0, days=365, title="Год"),
+    )
 
 
 def parse_yoomoney_label(label: str) -> tuple[int, str | None] | None:
@@ -60,8 +60,9 @@ def resolve_plan_for_payment(slug: str | None, settings: Settings) -> tuple[floa
             int(settings.subscription_days),
             "Подписка",
         )
-    plan = _PLANS_BY_SLUG.get(slug)
-    if not plan:
+    plans_by_slug = {p.slug: p for p in get_subscription_plans(settings)}
+    plan = plans_by_slug.get(slug)
+    if plan is None:
         return None
     return plan.price_rub, plan.days, plan.title
 
@@ -80,7 +81,7 @@ def build_plan_payment_link(settings: Settings, chat_id: int, plan: Subscription
 
 def _plan_offer_lines(settings: Settings, chat_id: int) -> list[str]:
     lines: list[str] = []
-    for p in STANDARD_PLANS:
+    for p in get_subscription_plans(settings):
         link = build_plan_payment_link(settings, chat_id, p)
         lines.append(
             f"\n<b>{p.title}</b> — <b>{p.price_rub:.0f} ₽</b> ({p.days} дн.)\n{link}"
@@ -124,7 +125,21 @@ def format_subscription_topup_text(
 def format_retry_payment_hints(settings: Settings, chat_id: int) -> str:
     """Короткий блок ссылок для повторной оплаты (ошибка суммы, codepro и т.д.)."""
     parts = []
-    for p in STANDARD_PLANS:
+    for p in get_subscription_plans(settings):
         link = build_plan_payment_link(settings, chat_id, p)
         parts.append(f"• {p.title} ({p.price_rub:.0f} ₽): {link}")
     return "\n".join(parts)
+
+
+def format_subscription_choice_text(current_until: str | None = None) -> str:
+    if current_until:
+        return (
+            "📅 <b>Подписка</b>\n\n"
+            f"Сейчас доступ до: <b>{current_until}</b>.\n"
+            "Выберите тариф. После выбора я отправлю ссылку на оплату.\n"
+            "Оплаченные дни добавятся после текущей даты."
+        )
+    return (
+        "📅 <b>Подписка</b>\n\n"
+        "Выберите тариф. После выбора я отправлю ссылку на оплату."
+    )
