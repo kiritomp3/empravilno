@@ -5,7 +5,7 @@ def start_kb(has_access: bool = True) -> ReplyKeyboardMarkup:
         keyboard = [[KeyboardButton(text="Главное меню")]]
     else:
         keyboard = [[KeyboardButton(text="Главное меню"),
-                     KeyboardButton(text="Оплатить подписку")]]
+                     KeyboardButton(text="Подписка")]]
     return ReplyKeyboardMarkup(
         keyboard=keyboard,
         resize_keyboard=True,
@@ -16,9 +16,8 @@ def start_kb(has_access: bool = True) -> ReplyKeyboardMarkup:
 def main_menu_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Профиль"), KeyboardButton(text="Цель по калориям")],
-            [KeyboardButton(text="Рост и вес"), KeyboardButton(text="Реф. ссылка")],
-            [KeyboardButton(text="Докупить подписку")],
+            [KeyboardButton(text="Профиль"), KeyboardButton(text="Цель, рост и вес")],
+            [KeyboardButton(text="Подписка"), KeyboardButton(text="Реф. ссылка")],
             [KeyboardButton(text="⬅️ Назад")],
         ],
         resize_keyboard=True,

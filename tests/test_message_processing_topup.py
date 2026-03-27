@@ -70,6 +70,8 @@ def make_processor(profile: UserProfile | None) -> MessageProcessor:
         yoomoney_receiver="41001111222333",
         yoomoney_success_url="https://example.com/success",
         yoomoney_fail_url="https://example.com/fail",
+        subscription_price=99.0,
+        subscription_days=14,
     )
     return MessageProcessor(
         llm=DummyLLM(),

@@ -4,14 +4,18 @@ from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from presentation.keyboards.reply import start_kb, main_menu_kb
+from services.subscription_plans import (
+    build_plan_payment_link,
+    format_subscription_choice_text,
+    get_subscription_plans,
+)
 
-class GoalEdit(StatesGroup):
-    waiting_number = State()
-
-
-class BodyMetricsEdit(StatesGroup):
+class ProfileEdit(StatesGroup):
+    waiting_goal = State()
     waiting_height = State()
     waiting_weight = State()
 
@@ -55,22 +59,26 @@ def setup_menu_reply_router(processor, telemetry=None, settings=None):
         link = await processor.build_ref_link(me.username, msg.chat.id)
         await msg.answer(f"Ваша реферальная ссылка:\n{link}", reply_markup=main_menu_kb())
 
-    # Изменение цели по калориям: запрос числа
-    @router.message(F.text.casefold() == "цель по калориям")
-    async def ask_goal(msg: types.Message, state: FSMContext):
+    @router.message(F.text.casefold() == "цель, рост и вес")
+    async def ask_profile_params(msg: types.Message, state: FSMContext):
         p = await processor._profiles.get(msg.chat.id)
         current = _fmt_goal(p.calories_goal if p else None)
-        await state.set_state(GoalEdit.waiting_number)
+        current_height = f"{p.height_cm} см" if p and p.height_cm else "не указан"
+        current_weight = (
+            f"{p.weight_kg:.1f}".rstrip("0").rstrip(".") + " кг" if p and p.weight_kg else "не указан"
+        )
+        await state.set_state(ProfileEdit.waiting_goal)
         await msg.answer(
-            "🎯 Изменение цели по калориям\n\n"
+            "🎯📐 Обновление цели и параметров\n\n"
             f"Текущая цель: <b>{current}</b>\n\n"
+            f"Текущий рост: <b>{current_height}</b>\n"
+            f"Текущий вес: <b>{current_weight}</b>\n\n"
             "Введите новое целое значение ккал (800–6000), например: 2200.\n"
             "Чтобы отменить, нажмите «⬅️ Назад».",
             reply_markup=main_menu_kb()
         )
 
-    # Принимаем число и сохраняем
-    @router.message(GoalEdit.waiting_number, F.text)
+    @router.message(ProfileEdit.waiting_goal, F.text)
     async def receive_goal(msg: types.Message, state: FSMContext):
         raw = (msg.text or "").strip().replace(" ", "")
         if not raw.isdigit():
@@ -80,27 +88,11 @@ def setup_menu_reply_router(processor, telemetry=None, settings=None):
         if goal < 800 or goal > 6000:
             await msg.answer("Слишком мало/много. Введите число в пределах 800–6000.")
             return
-        await processor.set_calories_goal(msg.chat.id, goal)
-        await state.clear()
-        await msg.answer(f"Цель по калориям обновлена: <b>{goal} ккал/день</b> ✅", reply_markup=main_menu_kb())
+        await state.update_data(goal=goal)
+        await state.set_state(ProfileEdit.waiting_height)
+        await msg.answer("Введите рост в сантиметрах. Например: 178")
 
-    @router.message(F.text.casefold() == "рост и вес")
-    async def ask_body_metrics(msg: types.Message, state: FSMContext):
-        p = await processor._profiles.get(msg.chat.id)
-        current_height = f"{p.height_cm} см" if p and p.height_cm else "не указан"
-        current_weight = (
-            f"{p.weight_kg:.1f}".rstrip("0").rstrip(".") + " кг" if p and p.weight_kg else "не указан"
-        )
-        await state.set_state(BodyMetricsEdit.waiting_height)
-        await msg.answer(
-            "📐 Параметры профиля\n\n"
-            f"Текущий рост: <b>{current_height}</b>\n"
-            f"Текущий вес: <b>{current_weight}</b>\n\n"
-            "Введите рост в сантиметрах. Например: 178",
-            reply_markup=main_menu_kb()
-        )
-
-    @router.message(BodyMetricsEdit.waiting_height, F.text)
+    @router.message(ProfileEdit.waiting_height, F.text)
     async def receive_height(msg: types.Message, state: FSMContext):
         raw = (msg.text or "").strip().replace(",", ".")
         if not raw.isdigit():
@@ -113,10 +105,10 @@ def setup_menu_reply_router(processor, telemetry=None, settings=None):
             return
 
         await state.update_data(height_cm=height_cm)
-        await state.set_state(BodyMetricsEdit.waiting_weight)
+        await state.set_state(ProfileEdit.waiting_weight)
         await msg.answer("Теперь введите вес в килограммах. Например: 72.5")
 
-    @router.message(BodyMetricsEdit.waiting_weight, F.text)
+    @router.message(ProfileEdit.waiting_weight, F.text)
     async def receive_weight(msg: types.Message, state: FSMContext):
         raw = (msg.text or "").strip().replace(",", ".").replace(" ", "")
         try:
@@ -130,26 +122,56 @@ def setup_menu_reply_router(processor, telemetry=None, settings=None):
             return
 
         data = await state.get_data()
+        await processor.set_calories_goal(msg.chat.id, data.get("goal"))
         await processor.set_body_metrics(
             msg.chat.id,
             height_cm=data.get("height_cm"),
             weight_kg=weight_kg,
         )
         await state.clear()
-        await msg.answer("Рост и вес сохранены ✅", reply_markup=main_menu_kb())
+        await msg.answer("Цель, рост и вес сохранены ✅", reply_markup=main_menu_kb())
 
-    @router.message(F.text.casefold() == "оплатить подписку")
-    async def pay_now(msg: types.Message):
+    @router.message(F.text.casefold() == "подписка")
+    async def open_subscription(msg: types.Message):
         if telemetry:
             await telemetry.incr("payments.intent_total")
-        pay_text = await processor.build_pay_text(msg.chat.id)
-        await msg.answer(pay_text, reply_markup=start_kb(has_access=False))
+        profile = await processor._profiles.get(msg.chat.id)
+        has_access = await processor.has_access(msg.chat.id)
+        current_until = profile.subscribe_until if (profile and has_access) else None
+
+        kb = InlineKeyboardBuilder()
+        for plan in get_subscription_plans(processor._settings):
+            kb.button(
+                text=f"{plan.title} ({plan.price_rub:.0f} ₽)",
+                callback_data=f"sub_plan:{plan.slug}",
+            )
+        kb.adjust(1)
+        await msg.answer(
+            format_subscription_choice_text(current_until=current_until),
+            reply_markup=kb.as_markup(),
+        )
+
+    @router.callback_query(F.data.startswith("sub_plan:"))
+    async def on_subscription_plan_selected(cb: CallbackQuery):
+        slug = (cb.data or "").split(":", 1)[1]
+        plans = {p.slug: p for p in get_subscription_plans(processor._settings)}
+        plan = plans.get(slug)
+        if plan is None:
+            await cb.answer("Тариф не найден", show_alert=True)
+            return
+        link = build_plan_payment_link(processor._settings, cb.message.chat.id, plan)
+        await cb.message.answer(
+            f"💳 <b>{plan.title}</b> — <b>{plan.price_rub:.0f} ₽</b>\n\n"
+            f"Ссылка на оплату:\n{link}"
+        )
+        await cb.answer()
+
+    @router.message(F.text.casefold() == "оплатить подписку")
+    async def legacy_pay_alias(msg: types.Message):
+        await open_subscription(msg)
 
     @router.message(F.text.casefold() == "докупить подписку")
-    async def topup_subscription(msg: types.Message):
-        if telemetry:
-            await telemetry.incr("payments.topup_intent_total")
-        pay_text = await processor.build_topup_pay_text(msg.chat.id)
-        await msg.answer(pay_text, reply_markup=main_menu_kb())
+    async def legacy_topup_alias(msg: types.Message):
+        await open_subscription(msg)
 
     return router

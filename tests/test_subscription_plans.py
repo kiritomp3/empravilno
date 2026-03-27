@@ -2,10 +2,11 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 from services.subscription_plans import (
-    STANDARD_PLANS,
     build_plan_payment_link,
+    format_subscription_choice_text,
     format_subscription_offer_text,
     format_subscription_topup_text,
+    get_subscription_plans,
     parse_yoomoney_label,
     resolve_plan_for_payment,
 )
@@ -34,12 +35,14 @@ def test_resolve_plan_for_payment_uses_settings_for_legacy_labels():
 
     assert resolve_plan_for_payment(None, settings) == (99.0, 14, "Подписка")
     assert resolve_plan_for_payment("w7", settings) == (50.0, 7, "Неделя")
+    assert resolve_plan_for_payment("m30", settings) == (99.0, 14, "Месяц")
+    assert resolve_plan_for_payment("y365", settings) == (1500.0, 365, "Год")
     assert resolve_plan_for_payment("missing", settings) is None
 
 
 def test_build_plan_payment_link_contains_plan_specific_label_and_amount():
     settings = make_settings()
-    week_plan = STANDARD_PLANS[0]
+    week_plan = get_subscription_plans(settings)[0]
 
     link = build_plan_payment_link(settings, 777, week_plan)
     query = parse_qs(urlparse(link).query)
@@ -57,8 +60,10 @@ def test_subscription_offer_text_lists_all_standard_plans():
 
     assert "Подписка закончилась" in text
     assert "Неделя" in text
+    assert "Месяц" in text
     assert "Год" in text
     assert "sub_555_w7" in text
+    assert "sub_555_m30" in text
     assert "sub_555_y365" in text
 
 
@@ -70,3 +75,21 @@ def test_subscription_topup_text_mentions_current_expiration_when_present():
     assert "Докупить подписку" in text
     assert "2026-04-10" in text
     assert "добавятся после этой даты" in text
+
+
+def test_subscription_choice_text_mentions_current_until_for_active_subscription():
+    text = format_subscription_choice_text(current_until="2026-04-10")
+
+    assert "2026-04-10" in text
+    assert "Выберите тариф" in text
+    assert "добавятся после текущей даты" in text
+
+
+def test_get_subscription_plans_uses_settings_for_month_plan():
+    settings = make_settings()
+
+    plans = get_subscription_plans(settings)
+
+    assert [plan.slug for plan in plans] == ["w7", "m30", "y365"]
+    assert plans[1].price_rub == 99.0
+    assert plans[1].days == 14
