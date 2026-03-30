@@ -4,6 +4,7 @@ from urllib.parse import parse_qs, urlparse
 from services.subscription_plans import (
     build_plan_payment_link,
     format_subscription_choice_text,
+    format_subscription_expired_text,
     format_subscription_offer_text,
     format_subscription_topup_text,
     get_subscription_plans,
@@ -65,6 +66,14 @@ def test_subscription_offer_text_lists_all_standard_plans():
     assert "sub_555_w7" in text
     assert "sub_555_m30" in text
     assert "sub_555_y365" in text
+
+
+def test_subscription_expired_text_redirects_to_subscription_section():
+    text = format_subscription_expired_text()
+
+    assert "Подписка закончилась" in text
+    assert 'Оплатить можно в разделе "Подписка"' in text
+    assert "sub_" not in text
 
 
 def test_subscription_topup_text_mentions_current_expiration_when_present():

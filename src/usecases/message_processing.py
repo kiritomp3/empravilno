@@ -3,7 +3,11 @@ from typing import Any
 from domain.ports import LLMClient, ChatSessionStore, NutritionLogStore, UserProfileStore
 from services.rendering import DaySummary, build_day_files
 from services.text_normalizer import extract_json_object
-from services.subscription_plans import format_subscription_offer_text, format_subscription_topup_text
+from services.subscription_plans import (
+    format_subscription_expired_text,
+    format_subscription_offer_text,
+    format_subscription_topup_text,
+)
 from datetime import date
 
 RESPONSE_KEYS = ("items",)
@@ -283,8 +287,7 @@ class MessageProcessor:
         return bool(p and p.subscribe_until and date.today() <= date.fromisoformat(p.subscribe_until))
     
     def _build_payment_text(self, chat_id: int) -> str:
-        s = self._settings
-        return format_subscription_offer_text(s, chat_id)
+        return format_subscription_expired_text()
 
     def _build_day_caption(self, summary: DaySummary, profile) -> str:
         return f"Итог калорий: {summary.net_kcal} ккал"

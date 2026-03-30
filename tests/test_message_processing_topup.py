@@ -110,3 +110,11 @@ def test_build_topup_pay_text_without_active_subscription_acts_like_new_purchase
 
     assert "Активной подписки сейчас нет" in text
     assert "sub_1_w7" in text
+
+
+def test_process_user_text_without_active_subscription_returns_short_subscription_hint():
+    processor = make_processor(None)
+
+    text = asyncio.run(processor.process_user_text(1, "привет"))
+
+    assert text == '🔒 <b>Подписка закончилась</b>\nОплатить можно в разделе "Подписка".'
