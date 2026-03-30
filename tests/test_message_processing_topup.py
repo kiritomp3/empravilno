@@ -72,6 +72,7 @@ def make_processor(profile: UserProfile | None) -> MessageProcessor:
         yoomoney_fail_url="https://example.com/fail",
         subscription_price=99.0,
         subscription_days=14,
+        admin_chat_ids=set(),
     )
     return MessageProcessor(
         llm=DummyLLM(),
@@ -118,3 +119,12 @@ def test_process_user_text_without_active_subscription_returns_short_subscriptio
     text = asyncio.run(processor.process_user_text(1, "привет"))
 
     assert text == '🔒 <b>Подписка закончилась</b>\nОплатить можно в разделе "Подписка".'
+
+
+def test_admin_has_access_without_subscription():
+    processor = make_processor(None)
+    processor._settings.admin_chat_ids = {619706500}
+
+    has_access = asyncio.run(processor.has_access(619706500))
+
+    assert has_access is True

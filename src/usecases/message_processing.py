@@ -26,6 +26,10 @@ class MessageProcessor:
         self._profiles = profiles
         self._settings = settings
 
+    def _is_admin(self, chat_id: int) -> bool:
+        settings = self._settings
+        return bool(settings and chat_id in settings.admin_chat_ids)
+
     async def ensure_profile(self, *, chat_id: int, name: str | None, username: str | None) -> str:
         profile, is_new = await self._profiles.ensure(chat_id=chat_id, name=name, username=username)
         if is_new:
@@ -259,6 +263,8 @@ class MessageProcessor:
             result.add(value)
         return result
     async def has_access(self, chat_id: int) -> bool:
+        if self._is_admin(chat_id):
+            return True
         p = await self._profiles.get(chat_id)
         return bool(p and p.subscribe_until and date.today() <= date.fromisoformat(p.subscribe_until))
 
@@ -283,6 +289,8 @@ class MessageProcessor:
         return format_subscription_topup_text(s, chat_id, current_until=current_until)
     
     async def _has_active_subscription(self, chat_id: int) -> bool:
+        if self._is_admin(chat_id):
+            return True
         p = await self._profiles.get(chat_id)
         return bool(p and p.subscribe_until and date.today() <= date.fromisoformat(p.subscribe_until))
     
