@@ -37,6 +37,26 @@ class Settings(BaseSettings):
         default=30,
         validation_alias=AliasChoices("SUBSCRIPTION_DAYS", "subscription_days"),
     )
+    nutrition_cleanup_hour: int = Field(
+        default=1,
+        validation_alias=AliasChoices("NUTRITION_CLEANUP_HOUR", "nutrition_cleanup_hour"),
+    )
+    nutrition_cleanup_minute: int = Field(
+        default=0,
+        validation_alias=AliasChoices("NUTRITION_CLEANUP_MINUTE", "nutrition_cleanup_minute"),
+    )
+    nutrition_cleanup_timezone: str = Field(
+        default="Europe/Moscow",
+        validation_alias=AliasChoices("NUTRITION_CLEANUP_TIMEZONE", "nutrition_cleanup_timezone"),
+    )
+    nutrition_inactive_hours: int = Field(
+        default=8,
+        validation_alias=AliasChoices("NUTRITION_INACTIVE_HOURS", "nutrition_inactive_hours"),
+    )
+    nutrition_cleanup_batch_size: int = Field(
+        default=500,
+        validation_alias=AliasChoices("NUTRITION_CLEANUP_BATCH_SIZE", "nutrition_cleanup_batch_size"),
+    )
 
     @property
     def admin_chat_ids(self) -> set[int]:

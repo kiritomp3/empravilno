@@ -3,7 +3,11 @@ from typing import Any
 from domain.ports import LLMClient, ChatSessionStore, NutritionLogStore, UserProfileStore
 from services.rendering import DaySummary, build_day_files
 from services.text_normalizer import extract_json_object
-from services.subscription_plans import format_subscription_offer_text, format_subscription_topup_text
+from services.subscription_plans import (
+    format_subscription_expired_text,
+    format_subscription_offer_text,
+    format_subscription_topup_text,
+)
 from datetime import date
 
 RESPONSE_KEYS = ("items",)
@@ -21,6 +25,10 @@ class MessageProcessor:
         self._nutrition = nutrition
         self._profiles = profiles
         self._settings = settings
+
+    def _is_admin(self, chat_id: int) -> bool:
+        settings = self._settings
+        return bool(settings and chat_id in settings.admin_chat_ids)
 
     async def ensure_profile(self, *, chat_id: int, name: str | None, username: str | None) -> str:
         profile, is_new = await self._profiles.ensure(chat_id=chat_id, name=name, username=username)
@@ -255,6 +263,8 @@ class MessageProcessor:
             result.add(value)
         return result
     async def has_access(self, chat_id: int) -> bool:
+        if self._is_admin(chat_id):
+            return True
         p = await self._profiles.get(chat_id)
         return bool(p and p.subscribe_until and date.today() <= date.fromisoformat(p.subscribe_until))
 
@@ -279,12 +289,13 @@ class MessageProcessor:
         return format_subscription_topup_text(s, chat_id, current_until=current_until)
     
     async def _has_active_subscription(self, chat_id: int) -> bool:
+        if self._is_admin(chat_id):
+            return True
         p = await self._profiles.get(chat_id)
         return bool(p and p.subscribe_until and date.today() <= date.fromisoformat(p.subscribe_until))
     
     def _build_payment_text(self, chat_id: int) -> str:
-        s = self._settings
-        return format_subscription_offer_text(s, chat_id)
+        return format_subscription_expired_text()
 
     def _build_day_caption(self, summary: DaySummary, profile) -> str:
         return f"Итог калорий: {summary.net_kcal} ккал"

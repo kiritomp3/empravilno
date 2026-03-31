@@ -9,6 +9,10 @@ from presentation.bot import build_bot, build_dispatcher
 from presentation.routers import chat as chat_router_module
 from presentation.routers import start as start_router_module
 from presentation.routers import menu_reply as menu_reply_router_module
+from services.nutrition_cleanup import (
+    run_nutrition_cleanup_scheduler,
+    stop_background_task,
+)
 import uvicorn
 from app.http import app as http_app
 
@@ -37,11 +41,23 @@ async def _run() -> None:
                                  log_level=container.settings.log_level.lower(), access_log=True)
     http_server = uvicorn.Server(http_config)
     http_task = asyncio.create_task(http_server.serve())
+    cleanup_task = asyncio.create_task(
+        run_nutrition_cleanup_scheduler(
+            container.nutrition,
+            timezone_name=container.settings.nutrition_cleanup_timezone,
+            inactive_for_hours=container.settings.nutrition_inactive_hours,
+            run_hour=container.settings.nutrition_cleanup_hour,
+            run_minute=container.settings.nutrition_cleanup_minute,
+            batch_size=container.settings.nutrition_cleanup_batch_size,
+            telemetry=container.telemetry,
+        )
+    )
 
     try:
         await dp.start_polling(bot)
     finally:
         http_server.should_exit = True
+        await stop_background_task(cleanup_task)
         await http_task
 
 

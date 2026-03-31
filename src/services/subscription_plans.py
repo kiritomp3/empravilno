@@ -101,6 +101,10 @@ def format_subscription_offer_text(settings: Settings, chat_id: int) -> str:
     return "\n".join(lines)
 
 
+def format_subscription_expired_text() -> str:
+    return '🔒 <b>Подписка закончилась</b>\nОплатить можно в разделе "Подписка".'
+
+
 def format_subscription_topup_text(
     settings: Settings, chat_id: int, *, current_until: str | None
 ) -> str:

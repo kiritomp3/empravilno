@@ -4,6 +4,7 @@ import hashlib
 from fastapi import APIRouter, Request, HTTPException
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNetworkError
 from app.container import build_container
 import redis.asyncio as redis
 from services.subscription_plans import (
@@ -31,8 +32,6 @@ def _check_signature(form: dict[str, str], secret: str) -> bool:
     sha = hashlib.sha1(line.encode("utf-8")).hexdigest()
     return sha == (form.get("sha1_hash") or "").lower()
 
-
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNetworkError
 
 IDEMPOTENCY_TTL_SECONDS = 90 * 24 * 60 * 60
 PROCESSING_TTL_SECONDS = 15 * 60

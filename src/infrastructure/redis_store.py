@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import time
 import redis.asyncio as redis
 from typing import Any
 from domain.models import UserProfile
@@ -30,26 +31,42 @@ class RedisChatSessionStore:
 
 
 class RedisNutritionLogStore:
-    def __init__(self, url: str, key_prefix: str = "bot:nutrition") -> None:
+    def __init__(
+        self,
+        url: str,
+        key_prefix: str = "bot:nutrition",
+        activity_key: str = "bot:nutrition:last_activity",
+    ) -> None:
         self._r = redis.from_url(url, decode_responses=True)
         self._pfx = key_prefix
+        self._activity_key = activity_key
 
     def _key(self, chat_id: int) -> str:
         return f"{self._pfx}:{chat_id}"
+
+    async def _touch(self, chat_id: int) -> None:
+        await self._r.zadd(self._activity_key, {str(chat_id): time.time()})
 
     async def add_items(self, chat_id: int, items: list[dict[str, Any]]) -> None:
         key = self._key(chat_id)
         cur = await self._r.get(key)
         arr = json.loads(cur) if cur else []
         arr.extend(items)
-        await self._r.set(key, json.dumps(arr, ensure_ascii=False))
+        payload = json.dumps(arr, ensure_ascii=False)
+        async with self._r.pipeline(transaction=False) as pipe:
+            pipe.set(key, payload)
+            pipe.zadd(self._activity_key, {str(chat_id): time.time()})
+            await pipe.execute()
 
     async def get_log(self, chat_id: int) -> list[dict[str, Any]]:
         cur = await self._r.get(self._key(chat_id))
         return json.loads(cur) if cur else []
 
     async def clear(self, chat_id: int) -> None:
-        await self._r.delete(self._key(chat_id))
+        async with self._r.pipeline(transaction=False) as pipe:
+            pipe.delete(self._key(chat_id))
+            pipe.zrem(self._activity_key, str(chat_id))
+            await pipe.execute()
 
     async def remove_last(self, chat_id: int) -> bool:
         """
@@ -72,11 +89,15 @@ class RedisNutritionLogStore:
 
         arr.pop()  # снять последнюю добавленную запись
 
-        if arr:
-            await self._r.set(key, json.dumps(arr, ensure_ascii=False))
-        else:
-            # если список опустел — просто удалим ключ
-            await self._r.delete(key)
+        async with self._r.pipeline(transaction=False) as pipe:
+            if arr:
+                pipe.set(key, json.dumps(arr, ensure_ascii=False))
+                pipe.zadd(self._activity_key, {str(chat_id): time.time()})
+            else:
+                # если список опустел — просто удалим ключ
+                pipe.delete(key)
+                pipe.zrem(self._activity_key, str(chat_id))
+            await pipe.execute()
 
         return True
 
@@ -108,12 +129,36 @@ class RedisNutritionLogStore:
         filtered = [item for pos, item in enumerate(arr, start=1) if pos not in valid_positions]
         removed_count = len(arr) - len(filtered)
 
-        if filtered:
-            await self._r.set(key, json.dumps(filtered, ensure_ascii=False))
-        else:
-            await self._r.delete(key)
+        async with self._r.pipeline(transaction=False) as pipe:
+            if filtered:
+                pipe.set(key, json.dumps(filtered, ensure_ascii=False))
+                pipe.zadd(self._activity_key, {str(chat_id): time.time()})
+            else:
+                pipe.delete(key)
+                pipe.zrem(self._activity_key, str(chat_id))
+            await pipe.execute()
 
         return removed_count
+
+    async def clear_inactive_logs(self, *, inactive_for_seconds: int, batch_size: int = 500) -> int:
+        threshold = time.time() - inactive_for_seconds
+        stale_chat_ids = await self._r.zrangebyscore(
+            self._activity_key,
+            min=0,
+            max=threshold,
+            start=0,
+            num=batch_size,
+        )
+        if not stale_chat_ids:
+            return 0
+
+        async with self._r.pipeline(transaction=False) as pipe:
+            for chat_id in stale_chat_ids:
+                pipe.delete(self._key(int(chat_id)))
+            pipe.zrem(self._activity_key, *stale_chat_ids)
+            await pipe.execute()
+
+        return len(stale_chat_ids)
 
 
 class RedisUserProfileStore:
