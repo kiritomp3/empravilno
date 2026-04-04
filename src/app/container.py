@@ -7,6 +7,7 @@ from infrastructure.memory_store import InMemoryChatSessionStore
 from infrastructure.redis_store import RedisChatSessionStore
 from infrastructure.redis_store import RedisNutritionLogStore
 from infrastructure.redis_store import RedisUserProfileStore
+from infrastructure.redis_store import RedisDiaryStreakStore
 from infrastructure.telemetry import RedisTelemetry
 from usecases.message_processing import MessageProcessor
 
@@ -27,8 +28,9 @@ class Container:
 
         self.profiles = RedisUserProfileStore(settings.redis_url)
         self.telemetry = RedisTelemetry(settings.redis_url)
+        self.streak = RedisDiaryStreakStore(settings.redis_url)
 
-        self.processor = MessageProcessor(self.llm, self.sessions, self.nutrition, self.profiles, settings=self.settings)
+        self.processor = MessageProcessor(self.llm, self.sessions, self.nutrition, self.profiles, settings=self.settings, streak=self.streak)
 
 def build_container(settings: Optional[Settings] = None) -> Container:
     return Container(settings or Settings())
