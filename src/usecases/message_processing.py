@@ -19,12 +19,13 @@ WELCOME_TEXT = (
 )
 
 class MessageProcessor:
-    def __init__(self, llm: LLMClient, sessions: ChatSessionStore, nutrition: NutritionLogStore, profiles: UserProfileStore, settings=None) -> None:
+    def __init__(self, llm: LLMClient, sessions: ChatSessionStore, nutrition: NutritionLogStore, profiles: UserProfileStore, settings=None, streak=None) -> None:
         self._llm = llm
         self._sessions = sessions
         self._nutrition = nutrition
         self._profiles = profiles
         self._settings = settings
+        self._streak = streak
 
     def _is_admin(self, chat_id: int) -> bool:
         settings = self._settings
@@ -137,6 +138,10 @@ class MessageProcessor:
         # Автовключение: есть подписка → включаем автоответ и продолжаем разбор текста
             await self._sessions.set_active(chat_id, True)
 
+        # Отмечаем день в streak (только при первой записи за день)
+        if self._streak:
+            await self._streak.mark_today(chat_id)
+
         raw = await self._llm.reply(user_text=text, chat_id=chat_id)
         return await self._build_nutrition_reply(chat_id, raw)
 
@@ -153,6 +158,10 @@ class MessageProcessor:
         active = await self._sessions.is_active(chat_id)
         if not active:
             await self._sessions.set_active(chat_id, True)
+
+        # Отмечаем день в streak (только при первой записи за день)
+        if self._streak:
+            await self._streak.mark_today(chat_id)
 
         raw = await self._llm.reply_with_image(
             chat_id=chat_id,

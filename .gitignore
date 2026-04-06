@@ -1,3 +1,4 @@
 .env
 .env.example
 .env.feature-base-clips
+.env.test

@@ -364,3 +364,74 @@ class RedisUserProfileStore:
 
         # Сохраняем профиль
         await self.upsert(p)
+
+
+class RedisDiaryStreakStore:
+    """
+    Хранит даты (YYYY-MM-DD), когда пользователь сделал первую запись в дневник за день.
+    Использует Redis Sorted Set: score = числовая дата, member = 'YYYY-MM-DD'.
+    Хранится не более 400 последних дат на пользователя.
+    """
+
+    MAX_DATES = 400
+
+    def __init__(self, url: str, key_prefix: str = "bot:streak:") -> None:
+        self._r = redis.from_url(url, decode_responses=True)
+        self._prefix = key_prefix
+
+    def _key(self, chat_id: int) -> str:
+        return f"{self._prefix}{chat_id}"
+
+    def _date_score(self, date_str: str) -> float:
+        return float(date_str.replace("-", ""))
+
+    async def mark_today(self, chat_id: int, tz: str = "Europe/Helsinki") -> bool:
+        """
+        Отмечает сегодняшний день как день с записью.
+        Возвращает True если это первая отметка за день, False если уже была.
+        """
+        today_str = datetime.now(ZoneInfo(tz)).date().isoformat()
+        key = self._key(chat_id)
+        score = self._date_score(today_str)
+        added = await self._r.zadd(key, {today_str: score}, nx=True)
+        if added:
+            total = await self._r.zcard(key)
+            if total > self.MAX_DATES:
+                await self._r.zremrangebyrank(key, 0, total - self.MAX_DATES - 1)
+        return bool(added)
+
+    async def get_dates(self, chat_id: int) -> list[str]:
+        """Все отмеченные даты ['YYYY-MM-DD', ...] по возрастанию."""
+        return list(await self._r.zrange(self._key(chat_id), 0, -1))
+
+    async def get_stats(self, chat_id: int, tz: str = "Europe/Helsinki") -> dict:
+        """Возвращает dates, current_streak, best_streak, total."""
+        dates = await self.get_dates(chat_id)
+        dates_set = set(dates)
+        total = len(dates)
+
+        current_streak = 0
+        cur = datetime.now(ZoneInfo(tz)).date()
+        while cur.isoformat() in dates_set:
+            current_streak += 1
+            cur = cur.fromordinal(cur.toordinal() - 1)
+
+        best_streak = 0
+        if dates:
+            run = 1
+            best_streak = 1
+            for i in range(1, len(dates)):
+                d1 = date.fromisoformat(dates[i - 1])
+                d2 = date.fromisoformat(dates[i])
+                if (d2 - d1).days == 1:
+                    run += 1
+                    best_streak = max(best_streak, run)
+                else:
+                    run = 1
+
+        return {
+            "dates": dates,
+            "current_streak": current_streak,
+            "best_streak": best_streak,
+            "total": total,
+        }

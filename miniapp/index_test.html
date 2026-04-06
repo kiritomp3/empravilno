@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Серия дней — тест</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--bg:#0f0f14;--card:#1a1a24;--accent:#ff6b35;--accent2:#ff9a3c;--gold:#ffd166;--text:#f0f0f0;--muted:#888}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;overflow-x:hidden;padding-bottom:40px}
+  .content{position:relative;z-index:1;width:100%;max-width:420px;padding:20px 16px}
+  .header{text-align:center;padding:24px 0 8px}
+  .header h1{font-size:20px;font-weight:700;color:var(--muted);letter-spacing:2px;text-transform:uppercase}
+  .loading-overlay{position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;transition:opacity .4s}
+  .loading-overlay.hidden{opacity:0;pointer-events:none}
+  .spinner{width:48px;height:48px;border:3px solid rgba(255,107,53,.2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .loading-text{color:var(--muted);font-size:14px}
+  .error-box{display:none;background:var(--card);border-radius:20px;padding:24px;text-align:center;margin:20px 0}
+  .error-box.show{display:block}
+  .error-box p{color:var(--muted);font-size:14px;line-height:1.5}
+  .retry-btn{margin-top:16px;padding:12px 28px;background:var(--accent);color:#fff;border:none;border-radius:40px;font-size:14px;font-weight:600;cursor:pointer}
+  .streak-block{display:flex;flex-direction:column;align-items:center;margin:10px 0 20px}
+  .fire-wrap{position:relative;width:160px;height:160px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .fire-wrap::before{content:'';position:absolute;inset:-12px;border-radius:50%;background:radial-gradient(circle,rgba(255,107,53,.35) 0%,transparent 70%);animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.12);opacity:1}}
+  .fire-emoji{font-size:96px;animation:flame 1.6s ease-in-out infinite;filter:drop-shadow(0 0 24px rgba(255,120,30,.9));display:block;line-height:1;user-select:none}
+  @keyframes flame{0%,100%{transform:scaleY(1) rotate(-1deg)}25%{transform:scaleY(1.04) rotate(1deg)}50%{transform:scaleY(.97) rotate(-2deg)}75%{transform:scaleY(1.03) rotate(1.5deg)}}
+  .fire-wrap.cold::before{background:radial-gradient(circle,rgba(100,150,255,.2) 0%,transparent 70%)}
+  .fire-wrap.cold .fire-emoji{filter:grayscale(.7) drop-shadow(0 0 12px rgba(100,150,255,.4));animation:none}
+  .streak-number{font-size:72px;font-weight:900;line-height:1;margin-top:12px;background:linear-gradient(135deg,var(--accent),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .streak-label{margin-top:6px;font-size:15px;color:var(--muted);letter-spacing:1px}
+  .today-badge{margin-top:10px;padding:8px 20px;border-radius:40px;font-size:13px;font-weight:600;background:rgba(54,166,106,.15);color:#36a66a;border:1px solid rgba(54,166,106,.3);display:none}
+  .today-badge.show{display:inline-block}
+  .section-title{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin:20px 0 10px}
+  .calendar{background:var(--card);border-radius:20px;padding:16px}
+  .cal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .cal-header span{font-size:15px;font-weight:600;color:var(--text)}
+  .cal-nav{background:none;border:none;color:var(--accent);font-size:20px;cursor:pointer;padding:0 6px;transition:transform .15s}
+  .cal-nav:active{transform:scale(.85)}
+  .cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px}
+  .cal-weekdays span{text-align:center;font-size:11px;color:var(--muted);font-weight:600}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .cal-day{aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:var(--muted);position:relative;user-select:none}
+  .cal-day.empty{pointer-events:none}
+  .cal-day.future{opacity:.25;pointer-events:none}
+  .cal-day.has-entry{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-weight:700;box-shadow:0 4px 12px rgba(255,107,53,.45)}
+  .cal-day.has-entry::after{content:'\1F525';position:absolute;font-size:8px;top:-3px;right:-1px}
+  .cal-day.today{border:2px solid var(--gold);color:var(--gold)}
+  .cal-day.today.has-entry{color:#fff}
+  .stats-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  .stat-card{background:var(--card);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+  .stat-icon{font-size:22px}
+  .stat-value{font-size:26px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .stat-name{font-size:11px;color:var(--muted)}
+  .share-btn{width:100%;margin-top:20px;padding:18px;border-radius:20px;border:none;font-size:17px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 8px 24px rgba(255,107,53,.4);transition:transform .15s,box-shadow .15s;letter-spacing:.5px}
+  .share-btn:active{transform:scale(.97)}
+  .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(30px);background:linear-gradient(135deg,var(--accent),var(--gold));color:#fff;padding:14px 28px;border-radius:40px;font-size:15px;font-weight:700;opacity:0;transition:all .4s cubic-bezier(.175,.885,.32,1.275);z-index:200;white-space:nowrap;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Загружаем прогресс…</div>
+</div>
+<div class="content">
+  <div class="header"><h1>Мой дневник</h1></div>
+  <div class="streak-block">
+    <div class="fire-wrap" id="fireTap"><span class="fire-emoji" id="fireEmoji">🔥</span></div>
+    <div class="streak-number" id="streakNum">—</div>
+    <div class="streak-label" id="streakLabel">дней подряд</div>
+    <div class="today-badge" id="todayBadge">✅ Сегодня уже записано</div>
+  </div>
+  <div class="error-box" id="errorBox">
+    <p>Не удалось загрузить данные.<br>Открой Mini App через бота.</p>
+    <button class="retry-btn" id="retryBtn">Попробовать снова</button>
+  </div>
+  <div class="section-title">История</div>
+  <div class="calendar">
+    <div class="cal-header">
+      <button class="cal-nav" id="prevMonth">‹</button>
+      <span id="calMonthLabel"></span>
+      <button class="cal-nav" id="nextMonth">›</button>
+    </div>
+    <div class="cal-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+    <div class="cal-grid" id="calGrid"></div>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><span class="stat-icon">🏆</span><span class="stat-value" id="bestStreak">—</span><span class="stat-name">Лучшая серия</span></div>
+    <div class="stat-card"><span class="stat-icon">📅</span><span class="stat-value" id="totalDays">—</span><span class="stat-name">Всего дней</span></div>
+  </div>
+  <button class="share-btn" id="shareBtn">📤 Поделиться прогрессом</button>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const tg=window.Telegram?.WebApp;
+if(tg){tg.ready();tg.expand();tg.setHeaderColor?.('#0f0f14');tg.setBackgroundColor?.('#0f0f14');}
+
+// ТЕСТОВЫЙ URL — замени на ngrok-адрес при локальном тесте
+// Пример: const BASE_URL='https://abc123.ngrok.io';
+const BASE_URL='http://localhost:8000';
+
+let entries=new Set(),currentStreak=0,bestStreak=0,totalDays=0;
+let calYear=new Date().getFullYear(),calMonth=new Date().getMonth();
+const MN=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+
+async function loadData(){
+  const ov=document.getElementById('loadingOverlay');
+  document.getElementById('errorBox').classList.remove('show');
+  const id=tg?.initData||'';
+  if(!id){ov.classList.add('hidden');renderEmpty();showToast('Открой через @emtestoviybot 🤖');return;}
+  try{
+    const r=await fetch(`${BASE_URL}/miniapp/streak?init_data=${encodeURIComponent(id)}`);
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    const d=await r.json();
+    entries=new Set(d.dates||[]);currentStreak=d.current_streak||0;bestStreak=d.best_streak||0;totalDays=d.total||0;
+    ov.classList.add('hidden');render();
+  }catch(e){console.error(e);ov.classList.add('hidden');document.getElementById('errorBox').classList.add('show');}
+}
+
+function renderEmpty(){['streakNum','bestStreak','totalDays'].forEach(i=>document.getElementById(i).textContent='0');renderCalendar();}
+document.getElementById('retryBtn').addEventListener('click',loadData);
+
+function pl(n){const a=Math.abs(n);if(a%10===1&&a%100!==11)return'день';if([2,3,4].includes(a%10)&&![12,13,14].includes(a%100))return'дня';return'дней';}
+
+function render(){
+  document.getElementById('streakNum').textContent=currentStreak;
+  document.getElementById('streakLabel').textContent=pl(currentStreak)+' подряд';
+  document.getElementById('bestStreak').textContent=bestStreak;
+  document.getElementById('totalDays').textContent=totalDays;
+  const tk=new Date().toISOString().slice(0,10);
+  entries.has(tk)?document.getElementById('todayBadge').classList.add('show'):document.getElementById('todayBadge').classList.remove('show');
+  const fw=document.getElementById('fireTap');
+  if(currentStreak===0){fw.classList.add('cold');document.getElementById('fireEmoji').textContent='🧊';}
+  else{fw.classList.remove('cold');document.getElementById('fireEmoji').textContent='🔥';}
+  renderCalendar();
+}
+
+function renderCalendar(){
+  document.getElementById('calMonthLabel').textContent=`${MN[calMonth]} ${calYear}`;
+  const g=document.getElementById('calGrid');g.innerHTML='';
+  const tk=new Date().toISOString().slice(0,10);
+  const off=(new Date(calYear,calMonth,1).getDay()+6)%7;
+  const days=new Date(calYear,calMonth+1,0).getDate();
+  for(let i=0;i<off;i++){const e=document.createElement('div');e.className='cal-day empty';g.appendChild(e);}
+  for(let d=1;d<=days;d++){
+    const k=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const e=document.createElement('div');e.className='cal-day';e.textContent=d;
+    if(k>tk)e.classList.add('future');
+    if(entries.has(k))e.classList.add('has-entry');
+    if(k===tk)e.classList.add('today');
+    g.appendChild(e);
+  }
+}
+
+document.getElementById('prevMonth').addEventListener('click',()=>{calMonth--;if(calMonth<0){calMonth=11;calYear--;}renderCalendar();});
+document.getElementById('nextMonth').addEventListener('click',()=>{calMonth++;if(calMonth>11){calMonth=0;calYear++;}renderCalendar();});
+document.getElementById('fireTap').addEventListener('click',()=>{});
+
+document.getElementById('shareBtn').addEventListener('click',()=>{
+  if(tg?.shareToStory){tg.shareToStory('',{text:`🔥 ${currentStreak} ${pl(currentStreak)} подряд в дневнике!`});}
+  else{showToast('Поделиться можно только в Telegram');}
+});
+
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
+
+loadData();
+</script>
+</body>
+</html>
