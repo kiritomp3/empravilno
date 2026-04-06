@@ -2,14 +2,17 @@ import hashlib
 import hmac
 import json
 import time
+from pathlib import Path
 from urllib.parse import unquote, parse_qsl
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.container import build_container
 from presentation.webhooks import yoomoney as yoomoney_webhook
+
+MINIAPP_HTML = Path(__file__).resolve().parents[2] / "miniapp" / "index_test.html"
 
 
 def _verify_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
@@ -68,6 +71,12 @@ def build_app() -> FastAPI:
         if not expected or x_admin_token != expected:
             raise HTTPException(status_code=403, detail="forbidden")
         return await container.telemetry.collect_all_stats()
+
+    @app.get("/miniapp", response_class=FileResponse)
+    async def miniapp() -> FileResponse:
+        if not MINIAPP_HTML.exists():
+            raise HTTPException(status_code=404, detail="mini app unavailable")
+        return FileResponse(MINIAPP_HTML)
 
     @app.get("/miniapp/streak")
     async def miniapp_streak(

@@ -15,6 +15,7 @@ WORKDIR /app
 # ==== КОД ДОЛЖЕН БЫТЬ ДО УСТАНОВКИ ПАКЕТА ====
 COPY pyproject.toml /app/pyproject.toml
 COPY src /app/src
+COPY miniapp /app/miniapp
 
 # Устанавливаем зависимости и сам пакет
 RUN python -m pip install --upgrade pip --root-user-action=ignore && \
