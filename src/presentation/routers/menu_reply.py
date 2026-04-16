@@ -21,6 +21,7 @@ class ProfileEdit(StatesGroup):
 
 def setup_menu_reply_router(processor, telemetry=None, settings=None):
     router = Router(name="menu_reply")
+    miniapp_url = settings.miniapp_url if settings else "http://localhost:8000/miniapp"
 
     def _fmt_goal(v: int | None) -> str:
         return f"{v} ккал/день" if v else "не задана"
@@ -28,55 +29,59 @@ def setup_menu_reply_router(processor, telemetry=None, settings=None):
     # Команда /menu как дубликат «Главное меню»
     @router.message(Command("menu"))
     async def cmd_menu(msg: types.Message):
-        await msg.answer("Главное меню:", reply_markup=main_menu_kb())
+        await msg.answer("Главное меню:", reply_markup=main_menu_kb(miniapp_url=miniapp_url))
 
     # Открыть главное меню кнопкой
     @router.message(F.text.casefold() == "главное меню")
     async def open_menu(msg: types.Message, state: FSMContext):
         await state.clear()
-        await msg.answer("Главное меню:", reply_markup=main_menu_kb())
+        await msg.answer("Главное меню:", reply_markup=main_menu_kb(miniapp_url=miniapp_url))
 
     # Назад в стартовые кнопки
-    @router.message(F.text == "⬅️ Назад")
-    async def back_to_start(msg: types.Message, state: FSMContext):
+    @router.callback_query(F.data == "back")
+    async def back_to_start(callback: CallbackQuery, state: FSMContext):
         await state.clear()
-        has_access = await processor.has_access(msg.chat.id)
-        await msg.answer(
+        has_access = await processor.has_access(callback.from_user.id)
+        await callback.message.edit_text(
             "Можно просто написать, что вы съели или какую активность сделали.",
             reply_markup=start_kb(has_access=has_access),
         )
+        await callback.answer()
 
     # Профиль
-    @router.message(F.text.casefold() == "профиль")
-    async def show_profile(msg: types.Message):
-        text = await processor.get_profile_text(msg.chat.id)
-        await msg.answer(text, reply_markup=main_menu_kb())
+    @router.callback_query(F.data == "profile")
+    async def show_profile(callback: CallbackQuery):
+        text = await processor.get_profile_text(callback.from_user.id)
+        await callback.message.edit_text(text, reply_markup=main_menu_kb(miniapp_url=miniapp_url))
+        await callback.answer()
 
     # Реферальная ссылка
-    @router.message(F.text.casefold() == "реф. ссылка")
-    async def show_reflink(msg: types.Message):
-        me = await msg.bot.get_me()
-        link = await processor.build_ref_link(me.username, msg.chat.id)
-        await msg.answer(f"Ваша реферальная ссылка:\n{link}", reply_markup=main_menu_kb())
+    @router.callback_query(F.data == "ref_link")
+    async def show_reflink(callback: CallbackQuery):
+        me = await callback.bot.get_me()
+        link = await processor.build_ref_link(me.username, callback.from_user.id)
+        await callback.message.edit_text(f"Ваша реферальная ссылка:\n{link}", reply_markup=main_menu_kb(miniapp_url=miniapp_url))
+        await callback.answer()
 
-    @router.message(F.text.casefold() == "цель, рост и вес")
-    async def ask_profile_params(msg: types.Message, state: FSMContext):
-        p = await processor._profiles.get(msg.chat.id)
+    @router.callback_query(F.data == "goal_height_weight")
+    async def ask_profile_params(callback: CallbackQuery, state: FSMContext):
+        p = await processor._profiles.get(callback.from_user.id)
         current = _fmt_goal(p.calories_goal if p else None)
         current_height = f"{p.height_cm} см" if p and p.height_cm else "не указан"
         current_weight = (
             f"{p.weight_kg:.1f}".rstrip("0").rstrip(".") + " кг" if p and p.weight_kg else "не указан"
         )
         await state.set_state(ProfileEdit.waiting_goal)
-        await msg.answer(
+        await callback.message.edit_text(
             "🎯📐 Обновление цели и параметров\n\n"
             f"Текущая цель: <b>{current}</b>\n\n"
             f"Текущий рост: <b>{current_height}</b>\n"
             f"Текущий вес: <b>{current_weight}</b>\n\n"
             "Введите новое целое значение ккал (800–6000), например: 2200.\n"
             "Чтобы отменить, нажмите «⬅️ Назад».",
-            reply_markup=main_menu_kb()
+            reply_markup=main_menu_kb(miniapp_url=miniapp_url)
         )
+        await callback.answer()
 
     @router.message(ProfileEdit.waiting_goal, F.text)
     async def receive_goal(msg: types.Message, state: FSMContext):
@@ -129,14 +134,14 @@ def setup_menu_reply_router(processor, telemetry=None, settings=None):
             weight_kg=weight_kg,
         )
         await state.clear()
-        await msg.answer("Цель, рост и вес сохранены ✅", reply_markup=main_menu_kb())
+        await msg.answer("Цель, рост и вес сохранены ✅", reply_markup=main_menu_kb(miniapp_url=miniapp_url))
 
-    @router.message(F.text.casefold() == "подписка")
-    async def open_subscription(msg: types.Message):
+    @router.callback_query(F.data == "subscription")
+    async def open_subscription(callback: CallbackQuery):
         if telemetry:
             await telemetry.incr("payments.intent_total")
-        profile = await processor._profiles.get(msg.chat.id)
-        has_access = await processor.has_access(msg.chat.id)
+        profile = await processor._profiles.get(callback.from_user.id)
+        has_access = await processor.has_access(callback.from_user.id)
         current_until = profile.subscribe_until if (profile and has_access) else None
 
         kb = InlineKeyboardBuilder()
@@ -146,10 +151,11 @@ def setup_menu_reply_router(processor, telemetry=None, settings=None):
                 callback_data=f"sub_plan:{plan.slug}",
             )
         kb.adjust(1)
-        await msg.answer(
+        await callback.message.edit_text(
             format_subscription_choice_text(current_until=current_until),
             reply_markup=kb.as_markup(),
         )
+        await callback.answer()
 
     @router.callback_query(F.data.startswith("sub_plan:"))
     async def on_subscription_plan_selected(cb: CallbackQuery):

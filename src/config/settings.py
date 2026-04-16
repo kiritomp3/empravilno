@@ -57,6 +57,10 @@ class Settings(BaseSettings):
         default=500,
         validation_alias=AliasChoices("NUTRITION_CLEANUP_BATCH_SIZE", "nutrition_cleanup_batch_size"),
     )
+    miniapp_url: str = Field(
+        default="http://localhost:8000/miniapp",
+        validation_alias=AliasChoices("MINIAPP_URL", "miniapp_url"),
+    )
 
     @property
     def admin_chat_ids(self) -> set[int]:

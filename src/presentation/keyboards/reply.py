@@ -1,4 +1,5 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 def start_kb(has_access: bool = True) -> ReplyKeyboardMarkup:
     if has_access:
@@ -13,13 +14,13 @@ def start_kb(has_access: bool = True) -> ReplyKeyboardMarkup:
                                 else "Подписка закончилась — оплатите, чтобы продолжить"
     )
 
-def main_menu_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Профиль"), KeyboardButton(text="Цель, рост и вес")],
-            [KeyboardButton(text="Подписка"), KeyboardButton(text="Реф. ссылка")],
-            [KeyboardButton(text="⬅️ Назад")],
-        ],
-        resize_keyboard=True,
-        input_field_placeholder="Выберите пункт меню"
-    )
+def main_menu_kb(miniapp_url: str = "https://yourdomain.com/miniapp") -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Профиль", callback_data="profile")
+    kb.button(text="Цель, рост и вес", callback_data="goal_height_weight")
+    kb.button(text="Подписка", callback_data="subscription")
+    kb.button(text="Реф. ссылка", callback_data="ref_link")
+    kb.button(text="Посмотреть прогресс", web_app=WebAppInfo(url=miniapp_url))
+    kb.button(text="⬅️ Назад", callback_data="back")
+    kb.adjust(2)
+    return kb.as_markup()
