@@ -1,0 +1,2 @@
+[console_scripts]
+emgood = app.main:main

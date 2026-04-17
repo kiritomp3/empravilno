@@ -5,6 +5,13 @@ openai>=1.51.0
 redis>=5.0.7
 tenacity>=9.0.0
 structlog>=24.4.0
+numpy<2
+pandas<3.0,>=2.2.2
+openpyxl<4.0,>=3.1.5
+matplotlib<4.0,>=3.9.0
+python-multipart>=0.0.9
+fastapi<1.0,>=0.115.0
+uvicorn[standard]<1.0,>=0.30.0
 
 [:platform_system != "Windows"]
 uvloop>=0.20.0

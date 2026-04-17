@@ -71,6 +71,10 @@ def setup_start_router(processor, telemetry=None, settings=None):
             reply_markup=start_kb(has_access=has_access),
         )
 
+    @router.message(Command("myid"))
+    async def on_myid(msg: types.Message):
+        await msg.answer(f"Ваш Telegram ID: `{msg.chat.id}`", parse_mode="Markdown")
+
     @router.message(Command("setbody"))
     async def on_setbody(msg: types.Message, state: FSMContext):
         await state.set_state(RegistrationBodyMetrics.waiting_height)
